@@ -375,7 +375,7 @@ function doVenta(credito,cid,meta){
   S.lista=[]; save(); return {num,total};
 }
 function doCot(cliente,meta){const items=snapshot(), total=items.reduce((a,i)=>a+i.c*i.p,0), num='CT-'+(S.seq.ct++);
-  S.cots.push({num,fecha:new Date().toISOString(),cliente:cliente||'Cliente de mostrador',items,total,estado:'Pendiente',cli:meta&&meta.cli||null,entrega:meta&&meta.entrega||null}); S.lista=[]; save(); return {num,total}}
+  S.cots.push({num,vend:S.user,fecha:new Date().toISOString(),cliente:cliente||'Cliente de mostrador',items,total,estado:'Pendiente',cli:meta&&meta.cli||null,entrega:meta&&meta.entrega||null}); S.lista=[]; save(); return {num,total}}
 function doAbono(cid,v,ref){const c=cli(cid); v=Math.min(v,c.saldo); c.saldo-=v; c.mov.push({f:new Date().toISOString(),t:'abono',v,ref:ref||'Efectivo'}); save(); return v}
 function doPagoProv(id,v){const x=S.cxp.find(c=>c.id===id); v=Math.min(v,x.valor-x.pagado); x.pagado+=v; save(); return v}
 function cerrar(k,d){
@@ -772,9 +772,9 @@ function docHTML(tipo,d,cliente,extra){const base=d.total/(1+IVA);
   <tr><td style="padding-left:0">Subtotal sin IVA</td><td style="padding-right:0">${fmt(base)}</td></tr><tr><td style="padding-left:0">IVA 19 %</td><td style="padding-right:0">${fmt(d.total-base)}</td></tr><tr class="tot"><td style="padding-left:0">Total</td><td style="padding-right:0">${fmt(d.total)}</td></tr></table></div>`}
 const docText=(tipo,d,cliente)=>`${tipo} ${d.num} · Ferretería de muestra\nCliente: ${cliente}\n`+(d.entrega?(d.entrega.tipo==='domicilio'?`Entrega a domicilio: ${d.entrega.dir}\n`:'Recoge en la tienda\n'):'')+d.items.map(i=>`${i.c} x ${i.n}: ${fmt(i.c*i.p)}`).join('\n')+`\nTOTAL: ${fmt(d.total)} (IVA incluido)`;
 function sheetFact(num){const v=S.ventas.find(x=>x.num===num);if(!v)return;const c=v.cli?v.cli.nombre:v.cid?cli(v.cid).nombre:'Mostrador';
-  openSheet(docHTML('Factura',v,c,` · ${v.credito?'Crédito':'Contado'}`)+`<div class="sacts"><button class="btn sec" data-act="copy:f:${num}">Copiar texto</button></div><p class="note">Documento de prueba. La factura electrónica ante la DIAN se conecta en la versión final.</p>`)}
+  openSheet(docHTML('Factura',v,c,` · ${v.credito?'Crédito':'Contado'}`)+PDFBTN);prepPDF('Factura',v)}
 function sheetCot(num){const c=S.cots.find(x=>x.num===num);if(!c)return;
-  openSheet(docHTML('Cotización',c,c.cliente,` · ${c.estado}`)+`<div class="sacts"><button class="btn" data-act="cot2lista:${num}">Pasar a la lista para vender</button><button class="btn sec" data-act="copy:c:${num}">Copiar para WhatsApp</button></div>`)}
+  openSheet(docHTML('Cotización',c,c.cliente,` · ${c.estado}`)+PDFBTN+`<div class="sacts"><button class="btn sec" data-act="cot2lista:${num}">Pasar a la lista para vender</button></div>`);prepPDF('Cotización',c)}
 function sheetProd(id){
   if(!isJefe()){const p=prod(+id);if(!p)return;openSheet(`<h3>${esc(p.nombre)}</h3><div class="kpis">${kpi('Precio',fmt(p.precio),'por '+esc(p.unidad))}${kpi('Existencias',p.stock.toLocaleString('es-CO'),'mínimo '+p.min,p.stock<=p.min?'warn':'good')}</div><div class="radd"><span>Cantidad</span><div class="qty big"><button type="button" data-rq="-1" data-for="sQty" aria-label="Menos">−</button><input id="sQty" type="number" inputmode="numeric" min="1" value="1" aria-label="Cantidad"><button type="button" data-rq="1" data-for="sQty" aria-label="Más">+</button></div><button class="btn" data-act="addq:${p.id}:sQty">Agregar a la lista</button></div>`);return}
   sheetProdEdit(id)}
@@ -824,6 +824,79 @@ function sheetMenu(){openSheet(`<h3>Menú</h3><div class="mnu">${MODS.map(([k,l]
 function sheetAlerts(){const a=alerts();openSheet(`<h3>Alertas</h3>${a.length?`<div class="card list">${a.map(x=>`<button class="rowi" data-act="go:${x.go}"><span class="nm">${esc(x.t)}</span><span class="sb">${esc(x.s)}</span><span class="r"><span class="pill low">Ver</span></span></button>`).join('')}</div>`:'<div class="empty">Sin alertas por ahora.</div>'}`)}
 function copy(t){try{navigator.clipboard.writeText(t).then(()=>toast('Copiado'),()=>toast('No se pudo copiar'))}catch(e){toast('No se pudo copiar')}}
 
+/* ---------- PDF ---------- */
+const EMP={nombre:'Ferretería de muestra',nit:'NIT 000.000.000-0',dir:'Dirección de la ferretería · Teléfono'};
+let jsPDFp=null,logoP=null,pdfCur=null;
+function loadScript(src){return new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=()=>{s.remove();rej()};document.head.appendChild(s)})}
+function needPDF(){return jsPDFp||(jsPDFp=loadScript('jspdf.umd.min.js').catch(()=>loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js')).then(()=>window.jspdf.jsPDF).catch(e=>{jsPDFp=null;throw e}))}
+function getLogo(){return logoP||(logoP=fetch('icon-192.png').then(r=>r.ok?r.blob():Promise.reject()).then(b=>new Promise(res=>{const f=new FileReader();f.onload=()=>res(f.result);f.onerror=()=>res(null);f.readAsDataURL(b)})).catch(()=>null))}
+async function makePDF(tipo,d){
+  const J=await needPDF(), logo=await getLogo(), doc=new J({unit:'mm',format:'letter'}), W=215.9, M=15, R=W-M;
+  const mon=n=>'$ '+Math.round(n).toLocaleString('es-CO'), fac=tipo==='Factura';
+  const ink=()=>doc.setTextColor(30,35,71), mut=()=>doc.setTextColor(105,110,140);
+  let y=M;
+  if(logo){try{doc.addImage(logo,'PNG',M,y,20,20)}catch(e){}}
+  const lx=logo?M+24:M;
+  doc.setFont('helvetica','bold');doc.setFontSize(16);ink();doc.text(EMP.nombre,lx,y+7);
+  doc.setFont('helvetica','normal');doc.setFontSize(9);mut();doc.text(EMP.nit,lx,y+12.5);doc.text(EMP.dir,lx,y+17);
+  doc.setFont('helvetica','bold');doc.setFontSize(13);ink();doc.text(fac?'FACTURA DE VENTA':'COTIZACIÓN',R,y+6,{align:'right'});
+  doc.setFontSize(12);doc.setTextColor(108,92,231);doc.text('N.º '+d.num,R,y+12,{align:'right'});
+  doc.setFont('helvetica','normal');doc.setFontSize(9);mut();
+  doc.text(new Date(d.fecha).toLocaleDateString('es-CO',{day:'numeric',month:'long',year:'numeric'})+' · '+ftime(d.fecha),R,y+17,{align:'right'});
+  y+=27;
+  const c=d.cli||{}, nom=c.nombre||d.cliente||(d.cid&&cli(d.cid)?cli(d.cid).nombre:'Cliente de mostrador'), ent=d.entrega, v=usr(d.vend);
+  const L=[['Cliente',nom],[c.tdoc||'Documento',c.doc||'—'],['Celular',c.tel||'—'],['Dirección',c.dir||'—']];
+  const Rr=[fac?['Forma de pago',d.credito?'Crédito':'Contado']:['Estado',d.estado||'Pendiente'],['Atendido por',v?v.nombre:'—'],['Entrega',!ent?'—':ent.tipo==='domicilio'?'A domicilio':'Recoge en la tienda']];
+  if(ent&&ent.tipo==='domicilio')Rr.push(['Llevar a',ent.dir||'—']);
+  if(ent&&ent.nota)Rr.push(['Indicaciones',ent.nota]);
+  const mid=M+98, wL=mid-M-30, wR=R-mid-30; doc.setFontSize(9.5);
+  const hOf=(rows,w)=>rows.reduce((a,r)=>a+doc.splitTextToSize(String(r[1]),w).length*4.6,0);
+  const bh=Math.max(hOf(L,wL),hOf(Rr,wR))+7;
+  doc.setFillColor(244,243,252);doc.roundedRect(M,y,R-M,bh,2.5,2.5,'F');
+  const col=(rows,x,w)=>{let yy=y+6.5;rows.forEach(r=>{doc.setFont('helvetica','normal');mut();doc.text(r[0],x,yy);doc.setFont('helvetica','bold');ink();const t=doc.splitTextToSize(String(r[1]),w);doc.text(t,x+26,yy);yy+=t.length*4.6})};
+  col(L,M+4,wL);col(Rr,mid,wR);
+  y+=bh+6;
+  const X={c:M+3,d:M+17,u:M+97,b:150,i:176,t:R-3};
+  const th=()=>{doc.setFillColor(30,35,71);doc.rect(M,y,R-M,8,'F');doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(255);
+    doc.text('Cant.',X.c,y+5.3);doc.text('Descripción',X.d,y+5.3);doc.text('Unidad',X.u,y+5.3);doc.text('Vr. unit. sin IVA',X.b,y+5.3,{align:'right'});doc.text('IVA 19 %',X.i,y+5.3,{align:'right'});doc.text('Total',X.t,y+5.3,{align:'right'});y+=8};
+  th();
+  d.items.forEach((it,k)=>{const lines=doc.splitTextToSize(it.n,76), rh=Math.max(7,lines.length*4.4+2.6), tot=it.c*it.p, base=tot/(1+IVA);
+    if(y+rh>262){doc.addPage();y=M;th()}
+    if(k%2){doc.setFillColor(249,248,254);doc.rect(M,y,R-M,rh,'F')}
+    doc.setFont('helvetica','normal');doc.setFontSize(9.5);ink();
+    doc.text(String(it.c),X.c,y+4.8);doc.text(lines,X.d,y+4.8);doc.text(it.u,X.u,y+4.8);
+    doc.text(mon(it.p/(1+IVA)),X.b,y+4.8,{align:'right'});doc.text(mon(tot-base),X.i,y+4.8,{align:'right'});
+    doc.setFont('helvetica','bold');doc.text(mon(tot),X.t,y+4.8,{align:'right'});y+=rh});
+  doc.setDrawColor(30,35,71);doc.setLineWidth(.4);doc.line(M,y,R,y);y+=7;
+  if(y>240){doc.addPage();y=M+4}
+  const base=d.total/(1+IVA), tx=R-62;
+  doc.setFont('helvetica','normal');doc.setFontSize(10);mut();doc.text('Subtotal sin IVA',tx,y);ink();doc.text(mon(base),X.t,y,{align:'right'});y+=6;
+  mut();doc.text('IVA 19 %',tx,y);ink();doc.text(mon(d.total-base),X.t,y,{align:'right'});y+=4;
+  doc.setFillColor(108,92,231);doc.roundedRect(tx-4,y,R-tx+4,10,2,2,'F');doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(255);
+  doc.text('TOTAL',tx,y+6.8);doc.text(mon(d.total),X.t,y+6.8,{align:'right'});
+  doc.setFont('helvetica','normal');doc.setFontSize(8.5);mut();
+  doc.text(['Los precios de venta incluyen el IVA del 19 %; aquí se discrimina el valor sin IVA y el impuesto.',fac?'Documento de prueba generado por FerreControl. No reemplaza la factura electrónica ante la DIAN.':'Cotización generada por FerreControl. Precios y existencias sujetos a cambio.'],M,y+18);
+  const blob=doc.output('blob'), name=`${fac?'Factura':'Cotizacion'}-${d.num}.pdf`;
+  return{blob,name,file:new File([blob],name,{type:'application/pdf'}),url:URL.createObjectURL(blob),nom,tel:c.tel||'',tipo,d}}
+const PDFBTN='<div class="sacts" id="pdfActs"><button class="btn" data-act="pdf:wa" disabled>Enviar por WhatsApp</button><button class="btn dk" data-act="pdf:print" disabled>Imprimir</button><button class="btn sec" data-act="pdf:down" disabled>Descargar PDF</button></div><p class="note" id="pdfMsg">Preparando el PDF…</p>';
+function prepPDF(tipo,d){if(pdfCur){try{URL.revokeObjectURL(pdfCur.url)}catch(e){}}pdfCur=null;
+  makePDF(tipo,d).then(p=>{pdfCur=p;const a=$('#pdfActs');if(a){a.querySelectorAll('button').forEach(b=>b.disabled=false);$('#pdfMsg').textContent='PDF listo: '+p.name}},
+    ()=>{const m=$('#pdfMsg');if(m)m.textContent='No se pudo preparar el PDF. Revisa la conexión e inténtalo de nuevo.'})}
+function pdfDown(){const a=document.createElement('a');a.href=pdfCur.url;a.download=pdfCur.name;document.body.appendChild(a);a.click();a.remove()}
+function pdfAct(x){const p=pdfCur;if(!p)return;
+  if(x==='down'){try{pdfDown();toast('PDF descargado')}catch(e){toast('Aquí no se puede descargar')}}
+  else if(x==='print'){try{
+      if(matchMedia('(pointer:coarse)').matches){if(!window.open(p.url,'_blank'))pdfDown()}
+      else{let f=$('#pdfFrame');if(f)f.remove();f=document.createElement('iframe');f.id='pdfFrame';f.style.cssText='position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0';f.src=p.url;
+        f.onload=()=>{try{f.contentWindow.focus();f.contentWindow.print()}catch(e){window.open(p.url,'_blank')}};document.body.appendChild(f)}
+    }catch(e){toast('Aquí no se puede imprimir')}}
+  else if(x==='wa'){const txt=`${p.tipo} ${p.d.num} de ${EMP.nombre} por ${fmt(p.d.total)} (IVA incluido).`;
+    try{if(navigator.canShare&&navigator.canShare({files:[p.file]})){navigator.share({files:[p.file],title:p.name,text:txt}).catch(()=>{});return}}catch(e){}
+    try{pdfDown()}catch(e){}
+    const n=p.tel.replace(/\D/g,''), to=n.length===10?'57'+n:n;
+    try{window.open('https://wa.me/'+to+'?text='+encodeURIComponent(txt),'_blank')}catch(e){}
+    toast('PDF descargado: adjúntalo en el chat')}}
+
 /* ---------- eventos ---------- */
 function refresh(){refreshHome();if(view!=='inicio')renderView()}
 let resetArm=0;
@@ -845,6 +918,7 @@ document.addEventListener('click',e=>{
   else if(a==='voz'){cfg.voz=!cfg.voz;saveCfg();if(!cfg.voz)stopSpeak();renderView()}
   else if(a==='reset'){if(Date.now()-resetArm>3000){resetArm=Date.now();toast('Toca otra vez para borrar los cambios');return}
     resetArm=0;S=seed();save();ctx.lastPid=null;ctx.pending=null;renderReply({text:INTRO});refresh();toast('Datos de muestra restaurados')}
+  else if(a==='pdf')pdfAct(x);
   else if(a==='cierre')sheetCierre(x,y||null);
   else if(a==='fact')sheetFact(x);
   else if(a==='cot')sheetCot(x);
@@ -862,7 +936,7 @@ document.addEventListener('click',e=>{
 document.addEventListener('submit',e=>{const f=e.target.closest('[data-form]');if(!f)return;e.preventDefault();const d=Object.fromEntries(new FormData(f)), k=f.dataset.form;
   if(k==='cierre'){if(d.entrega==='domicilio'&&!d.dirEnt.trim()){toast('Falta la dirección de entrega');return}
     const r=cerrar(f.dataset.k,{cid:f.dataset.cid?+f.dataset.cid:null,final:!!f.dataset.final,nombre:d.nombre.trim(),tdoc:d.tdoc,doc:d.doc.trim(),tel:d.tel.trim(),dir:d.dir.trim(),entrega:d.entrega,dirEnt:d.dirEnt.trim(),nota:d.nota.trim()});
-    closeSheet();if(view!=='inicio')go('inicio');renderReply(r);refresh();speak(r.text);return}
+    closeSheet();if(view!=='inicio')go('inicio');renderReply(r);refresh();speak(r.text);if(r.factura)sheetFact(r.factura);else if(r.cot)sheetCot(r.cot);return}
   if(k==='prod'){const o={nombre:d.nombre.trim(),alias:d.alias.trim(),unidad:d.unidad.trim().toLowerCase(),cat:d.cat.trim(),precio:+d.precio,costo:+d.costo,stock:+d.stock,min:+d.min,prov:+d.prov};
     if(f.dataset.id==='new')S.prods.push(Object.assign({id:S.seq.id++},o));else Object.assign(prod(+f.dataset.id),o);toast('Producto guardado')}
   else if(k==='cli'){S.clientes.push({id:S.seq.id++,nombre:d.nombre.trim(),nota:d.nota.trim(),tel:d.tel.trim(),tdoc:'CC',doc:d.doc.trim(),dir:d.dir.trim(),cupo:+d.cupo,saldo:0,mov:[]});toast('Cliente guardado')}
