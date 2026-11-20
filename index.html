@@ -82,6 +82,13 @@ input,select{font:inherit;color:inherit}
 .qty input{width:58px;height:30px;text-align:center;border:1.5px solid var(--line);border-radius:9px;font-size:16px;font-weight:600;background:#fff;-moz-appearance:textfield}
 .qty input::-webkit-outer-spin-button,.qty input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .qty.big button{width:36px;height:36px;font-size:18px}.qty.big input{width:72px;height:36px}
+.csel{display:flex;align-items:center;gap:10px;background:#F0EEFC;border-radius:14px;padding:10px 12px}
+.csel div{flex:1;min-width:0}.csel small{display:block;font-size:12px;color:var(--mut);font-weight:600}.csel b{font-size:16px}
+#cieBox{grid-column:1/-1}
+#cieRes{display:grid;gap:6px;margin-top:7px}
+.cres{text-align:left;background:#fff;border:1.5px solid var(--line);border-radius:12px;padding:8px 12px}
+.cres b{display:block;font-weight:600}.cres small{color:var(--mut);font-size:12.5px}
+.cres.new{border-style:dashed;border-color:#B3ABF6}.cres.new b{color:var(--pur)}
 .opts{display:grid;gap:6px;margin-top:10px}
 .opts button{text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 12px;font-weight:500}
 .cfm{display:flex;gap:8px;margin-top:11px}
@@ -716,10 +723,14 @@ function vInv(){const cats=['Todos','Bajo mínimo',...new Set(S.prods.map(p=>p.c
   <input class="search" id="invQ" placeholder="Buscar producto…" value="${esc(invQ)}" aria-label="Buscar producto">
   <div class="cats">${cats.map(c=>`<button data-cat="${esc(c)}" class="${c===invCat?'on':''}">${esc(c)}</button>`).join('')}</div>
   <div class="card list" id="invList">${invRows()}</div>`}
-function vClientes(){const ds=S.clientes.slice().sort((a,b)=>b.saldo-a.saldo), tot=porCobrar();
+let cliQ='';
+function cliRows(){const q=cliQ.trim(), ds=(q?cliFind(q).concat(S.clientes.filter(c=>norm(c.nombre).includes(norm(q)))).filter((c,i,a)=>a.indexOf(c)===i):S.clientes.slice()).sort((a,b)=>b.saldo-a.saldo);
+  return ds.length?ds.map(c=>{const pc=Math.min(100,c.cupo?c.saldo/c.cupo*100:0);return`<button class="rowi" data-act="cli:${c.id}"><span class="nm">${esc(c.nombre)}</span><span class="sb">${esc(c.doc?(c.tdoc||'CC')+' '+c.doc:c.nota||'')} · cupo ${fmt(c.cupo)}</span><span class="r"><b>${fmt(c.saldo)}</b><span class="pill ${c.saldo<=0?'':pc>=90?'bad':'low'}">${c.saldo<=0?'Al día':Math.round(pc)+' % del cupo'}</span></span><span class="bar"><i class="${pc>=90?'b':pc>=60?'w':''}" style="width:${pc}%"></i></span></button>`}).join(''):'<div class="empty">Sin resultados.</div>'}
+function vClientes(){const ds=S.clientes, tot=porCobrar();
   return head('Clientes','Fiados y créditos: lo que los clientes le deben a la ferretería.','<button class="btn sm" data-act="cli:new">+ Cliente</button>')+
-  `<div class="kpis">${kpi('Por cobrar',fmt(tot),'','warn')}${kpi('Con saldo',ds.filter(c=>c.saldo>0).length,'clientes')}${kpi('Cerca del cupo',ds.filter(c=>c.saldo/c.cupo>=.9).length,'90 % o más',ds.some(c=>c.saldo/c.cupo>=.9)?'bad':'')}${kpi('Cupo total',fmt(ds.reduce((a,c)=>a+c.cupo,0)))}</div>
-  <div class="card list">${ds.map(c=>{const pc=Math.min(100,c.cupo?c.saldo/c.cupo*100:0);return`<button class="rowi" data-act="cli:${c.id}"><span class="nm">${esc(c.nombre)}</span><span class="sb">${esc(c.nota||'')} · cupo ${fmt(c.cupo)}</span><span class="r"><b>${fmt(c.saldo)}</b><span class="pill ${c.saldo<=0?'':pc>=90?'bad':'low'}">${c.saldo<=0?'Al día':Math.round(pc)+' % del cupo'}</span></span><span class="bar"><i class="${pc>=90?'b':pc>=60?'w':''}" style="width:${pc}%"></i></span></button>`}).join('')}</div>`}
+  `<div class="kpis">${kpi('Por cobrar',fmt(tot),'','warn')}${kpi('Con saldo',ds.filter(c=>c.saldo>0).length,'clientes')}${kpi('Cerca del cupo',ds.filter(c=>c.cupo&&c.saldo/c.cupo>=.9).length,'90 % o más',ds.some(c=>c.cupo&&c.saldo/c.cupo>=.9)?'bad':'')}${kpi('Clientes',ds.length)}</div>
+  <input class="search" id="cliQ" type="search" placeholder="Buscar por nombre, cédula o celular…" value="${esc(cliQ)}" aria-label="Buscar cliente">
+  <div class="card list" id="cliList">${cliRows()}</div>`}
 function vCompras(){const l=S.cxp.slice().sort((a,b)=>a.vence<b.vence?-1:1), ve=vencidas(), now=new Date();
   const ped=S.provs.map(p=>({p,n:S.prods.filter(x=>x.prov===p.id&&x.stock<=x.min).length})).filter(x=>x.n);
   const pedH=`<div class="sect">Pedidos sugeridos</div>${ped.length?`<div class="card list">${ped.map(x=>`<button class="rowi" data-act="prov:${x.p.id}"><span class="nm">${esc(x.p.nombre)}</span><span class="sb">Toca para ver el pedido</span><span class="r"><span class="pill low">${x.n} por pedir</span></span></button>`).join('')}</div>`:'<div class="card empty">Nada por pedir: todo está sobre el mínimo.</div>'}`;
@@ -806,7 +817,8 @@ function sheetCierre(k,cid){
   const v=fin?{nombre:'Consumidor final',tdoc:'CC',doc:'222222222222',tel:'',dir:''}:c?{nombre:c.nombre,tdoc:c.tdoc||'CC',doc:c.doc||'',tel:c.tel||'',dir:c.dir||''}:{nombre:'',tdoc:'CC',doc:'',tel:'',dir:''};
   const req=k==='cot'||fin?'':'required', nuevo=c?c.saldo+tot:tot;
   openSheet(`<h3>${T} · ${fmt(tot)}</h3><form data-form="cierre" data-k="${k}" data-cid="${c?c.id:''}" data-final="${fin?1:''}"><div class="fg">
-  <label class="w">Cliente<select id="cieSel" data-k="${k}"><option value="">Cliente nuevo</option>${k==='fiar'?'':`<option value="final" ${fin?'selected':''}>Consumidor final</option>`}${S.clientes.map(x=>`<option value="${x.id}" ${c&&c.id===x.id?'selected':''}>${esc(x.nombre)}</option>`).join('')}</select></label>
+  <div class="w" id="cieBox" data-k="${k}">${c||fin?`<div class="csel"><div><small>Cliente</small><b>${esc(v.nombre)}</b></div><button class="btn sec sm" type="button" data-act="cierre:${k}:">Cambiar</button></div>`
+    :`<label>Buscar cliente<input id="cieQ" type="search" autocomplete="off" placeholder="Nombre, cédula, NIT o celular"></label><div id="cieRes"></div>`}</div>
   <label class="w">Nombre o razón social<input name="nombre" required value="${esc(v.nombre)}"></label>
   <label>Tipo de documento<select name="tdoc">${['CC','NIT','CE','Pasaporte'].map(t=>`<option ${v.tdoc===t?'selected':''}>${t}</option>`).join('')}</select></label>
   <label>Número (cédula o NIT)<input name="doc" inputmode="numeric" ${req} value="${esc(v.doc)}"></label>
@@ -816,7 +828,15 @@ function sheetCierre(k,cid){
   <label class="w" id="cieDirW" hidden>Dirección de entrega<input name="dirEnt" id="cieDir"></label>
   <label class="w" id="cieNotaW" hidden>Indicaciones para la entrega<input name="nota" placeholder="Quién recibe, horario, referencias…"></label></div>
   ${k==='fiar'?`<p class="note" style="${c&&nuevo<=c.cupo?'':'color:var(--bad);font-weight:600'}">${c?`Saldo actual ${fmt(c.saldo)}. Con esta venta queda en ${fmt(nuevo)} de un cupo de ${fmt(c.cupo)}.${nuevo>c.cupo?' Supera el cupo.':''}`:'Cliente nuevo: todavía no tiene cupo de crédito aprobado.'}</p>`:''}
-  <div class="sacts"><button class="btn" type="submit">${T} ${fmt(tot)}</button><button class="btn sec" type="button" data-act="close">Cancelar</button></div></form>`)}
+  <div class="sacts"><button class="btn" type="submit">${T} ${fmt(tot)}</button><button class="btn sec" type="button" data-act="close">Cancelar</button></div></form>`);
+  if($('#cieQ')){cieSearch();try{$('#cieQ').focus()}catch(e){}}}
+function cliFind(q){const n=norm(q), dg=q.replace(/\D/g,'');if(!n&&!dg)return[];
+  return S.clientes.filter(x=>{const hay=norm(x.nombre+' '+(x.doc||'')), nums=((x.doc||'')+' '+(x.tel||'')).split(' ').map(s=>s.replace(/\D/g,'')).join(' ')+' '+(x.tel||'').replace(/\D/g,'');
+    return (n&&hay.includes(n))||(dg.length>=3&&nums.includes(dg))}).slice(0,6)}
+function cieSearch(){const q=$('#cieQ').value.trim(), k=$('#cieBox').dataset.k, r=cliFind(q);
+  $('#cieRes').innerHTML=(r.map(x=>`<button type="button" class="cres" data-act="cierre:${k}:${x.id}"><b>${esc(x.nombre)}</b><small>${esc([x.doc?(x.tdoc||'CC')+' '+x.doc:'',x.tel||''].filter(Boolean).join(' · '))}</small></button>`).join(''))
+    +(q?`<button type="button" class="cres new" data-act="cienew"><b>+ Cliente nuevo${/\d{5,}/.test(q.replace(/\D/g,''))&&!/[a-zñ]/i.test(q)?'':': «'+esc(q)+'»'}</b><small>${r.length?'No es ninguno de los anteriores':'No hay clientes con ese dato'}</small></button>`:'')
+    +(k==='fiar'?'':`<button type="button" class="cres" data-act="cierre:${k}:final"><b>Consumidor final</b><small>Venta de mostrador sin datos</small></button>`)}
 const entTxt=e=>!e?'':e.tipo==='domicilio'?`Entrega a domicilio: ${esc(e.dir||'sin dirección')}${e.nota?' · '+esc(e.nota):''}`:'Recoge en la tienda';
 const cliTxt=c=>!c?'':[c.doc?`${esc(c.tdoc||'CC')} ${esc(c.doc)}`:'',c.tel?'Cel. '+esc(c.tel):'',c.dir?esc(c.dir):''].filter(Boolean).join(' · ');
 function sheetUser(){openSheet(`<h3>¿Quién está usando la app?</h3><div class="card list">${S.users.map(u=>`<button class="rowi" data-act="setuser:${u.id}"><span class="nm">${esc(u.nombre)}</span><span class="sb">${u.rol==='jefe'?'Jefe · ve todo: ventas totales, por empleado, finanzas y deudas':'Vendedor · ve sus propias ventas'}</span><span class="r"><span class="pill ${u.id===S.user?'':'neu'}">${u.id===S.user?'Activo':'Entrar'}</span></span></button>`).join('')}</div><p class="note">En la versión final cada persona entra con su clave.</p>`)}
@@ -919,6 +939,8 @@ document.addEventListener('click',e=>{
   else if(a==='reset'){if(Date.now()-resetArm>3000){resetArm=Date.now();toast('Toca otra vez para borrar los cambios');return}
     resetArm=0;S=seed();save();ctx.lastPid=null;ctx.pending=null;renderReply({text:INTRO});refresh();toast('Datos de muestra restaurados')}
   else if(a==='pdf')pdfAct(x);
+  else if(a==='cienew'){const q=$('#cieQ').value.trim(), f=b.closest('form'), num=!/[a-zñ]/i.test(q)&&q.replace(/\D/g,'').length>=5;
+    if(num)f.doc.value=q;else f.nombre.value=q.replace(/(^|\s)\p{L}/gu,m=>m.toUpperCase());$('#cieRes').innerHTML='';(num?f.nombre:f.doc).focus()}
   else if(a==='cierre')sheetCierre(x,y||null);
   else if(a==='fact')sheetFact(x);
   else if(a==='cot')sheetCot(x);
@@ -943,11 +965,12 @@ document.addEventListener('submit',e=>{const f=e.target.closest('[data-form]');i
   else if(k==='abono'){const v=doAbono(+f.dataset.id,+d.v,d.ref);toast('Abono de '+fmt(v)+' registrado')}
   else if(k==='pago'){const v=doPagoProv(+f.dataset.id,+d.v);toast('Pago de '+fmt(v)+' registrado')}
   save();closeSheet();refresh()});
-document.addEventListener('input',e=>{if(e.target.id==='invQ'){invQ=e.target.value;$('#invList').innerHTML=invRows()}});
+document.addEventListener('input',e=>{if(e.target.id==='cieQ'){cieSearch();return}
+  if(e.target.id==='cliQ'){cliQ=e.target.value;$('#cliList').innerHTML=cliRows();return}
+  if(e.target.id==='invQ'){invQ=e.target.value;$('#invList').innerHTML=invRows()}});
 document.addEventListener('change',e=>{
   if(e.target.classList.contains('lq')){const i=S.lista.find(x=>x.pid===+e.target.dataset.pid), q=parseInt(e.target.value,10);if(i){if(!(q>0))S.lista=S.lista.filter(x=>x!==i);else i.c=q;save();renderView()}return}
   
-  if(e.target.id==='cieSel'){sheetCierre(e.target.dataset.k,e.target.value||null);return}
   if(e.target.id==='cieEnt'){const dm=e.target.value==='domicilio';$('#cieDirW').hidden=!dm;$('#cieNotaW').hidden=!dm;if(dm&&!$('#cieDir').value)$('#cieDir').value=e.target.form.dir.value;return}
   if(e.target.id==='voiceSel'){cfg.voice=e.target.value;saveCfg();speak('Hola, esta es mi voz.')}});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeSheet()});
