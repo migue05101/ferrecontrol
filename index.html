@@ -76,6 +76,12 @@ input,select{font:inherit;color:inherit}
 .rprod{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
 .rprod b{font-size:30px;line-height:1}
 .rprod small{color:var(--mut);font-size:13px;margin-right:auto}
+.radd{display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap}
+.radd span{font-size:13px;font-weight:600;color:var(--mut)}
+.radd .btn{margin-left:auto}
+.qty input{width:58px;height:30px;text-align:center;border:1.5px solid var(--line);border-radius:9px;font-size:16px;font-weight:600;background:#fff;-moz-appearance:textfield}
+.qty input::-webkit-outer-spin-button,.qty input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.qty.big button{width:36px;height:36px;font-size:18px}.qty.big input{width:72px;height:36px}
 .opts{display:grid;gap:6px;margin-top:10px}
 .opts button{text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 12px;font-weight:500}
 .cfm{display:flex;gap:8px;margin-top:11px}
@@ -568,7 +574,7 @@ function refreshHome(){
 function renderReply(r){
   let h=`<div class="rtx"><span class="wv s5" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><p>${esc(r.text)}</p><button class="dots" data-act="type" aria-label="Escribir la pregunta">•••</button></div>`;
   if(r.card){const p=prod(r.card.pid); if(p){const cls=p.stock<=0?'out':p.stock<=p.min?'low':'';
-    h+=`<div class="rprod"><b class="num">${fmt(p.precio)}</b><small>por ${esc(p.unidad)}</small><span class="pill ${cls}">${p.stock<=0?'Agotado':'Hay '+p.stock.toLocaleString('es-CO')}</span><button class="btn sm" data-cmd="#a${p.id}x1" data-label="Agregar a la lista">+ Lista</button></div>`}}
+    h+=`<div class="rprod"><b class="num">${fmt(p.precio)}</b><small>por ${esc(p.unidad)}</small><span class="pill ${cls}">${p.stock<=0?'Agotado':'Hay '+p.stock.toLocaleString('es-CO')}</span></div><div class="radd"><span>Cantidad</span><div class="qty big"><button type="button" data-rq="-1" data-for="rQty" aria-label="Menos">−</button><input id="rQty" type="number" inputmode="numeric" min="1" value="1" aria-label="Cantidad"><button type="button" data-rq="1" data-for="rQty" aria-label="Más">+</button></div><button class="btn sm" data-act="addq:${p.id}:rQty">Agregar a la lista</button></div>`}}
   if(r.rows)h+=`<table class="tbl">${r.rows.slice(0,6).map(x=>`<tr><td>${esc(x[0])}</td><td>${esc(x[1])}</td></tr>`).join('')}</table>`;
   if(r.chips)h+=`<div class="opts">${r.chips.map(c=>`<button data-cmd="${esc(c.c)}" data-label="${esc(c.l)}">${esc(c.l)}</button>`).join('')}</div>`;
   if(r.confirm)h+=`<div class="cfm"><button class="btn" data-cmd="confirmar" data-label="Confirmar">Confirmar</button><button class="btn sec" data-cmd="cancelar" data-label="Cancelar">Cancelar</button></div>`;
@@ -692,7 +698,7 @@ const head=(t,sub,btn)=>`<div class="vtop">${BACK}<h2>${t}</h2>${btn||''}</div>$
 const kpi=(l,v,e,c)=>`<div class="card kpi ${c||''}"><span>${l}</span><b>${v}</b>${e?`<em>${e}</em>`:''}</div>`;
 function renderView(){$('#viewCol').innerHTML=({inventario:vInv,ventas:vVentas,clientes:vClientes,compras:vCompras,proveedores:vProv,reportes:vRep,finanzas:vFin,configuracion:vCfg}[view])()}
 function listaHTML(){const tot=listaTotal(), dis=S.lista.length?'':'disabled';
-  return `<div class="card list">${S.lista.length?S.lista.map(i=>{const p=prod(i.pid);return`<div class="li"><div class="nm">${esc(p.nombre)}</div><div class="tt num">${fmt(i.c*p.precio)}</div><div class="sb">${fmt(p.precio)} / ${esc(p.unidad)}${i.c>p.stock?' · <b style="color:var(--bad)">solo hay '+p.stock+'</b>':''}</div><div class="qty"><button data-q="-1" data-pid="${p.id}" aria-label="Menos">−</button><span class="num">${i.c}</span><button data-q="1" data-pid="${p.id}" aria-label="Más">+</button></div></div>`}).join(''):'<div class="empty">La lista está vacía. Pídele un producto al asistente y di «agregar a la lista».</div>'}
+  return `<div class="card list">${S.lista.length?S.lista.map(i=>{const p=prod(i.pid);return`<div class="li"><div class="nm">${esc(p.nombre)}</div><div class="tt num">${fmt(i.c*p.precio)}</div><div class="sb">${fmt(p.precio)} / ${esc(p.unidad)}${i.c>p.stock?' · <b style="color:var(--bad)">solo hay '+p.stock+'</b>':''}</div><div class="qty"><button data-q="-1" data-pid="${p.id}" aria-label="Menos">−</button><input class="lq" type="number" inputmode="numeric" min="0" value="${i.c}" data-pid="${p.id}" aria-label="Cantidad de ${esc(p.nombre)}"><button data-q="1" data-pid="${p.id}" aria-label="Más">+</button></div></div>`}).join(''):'<div class="empty">La lista está vacía. Pídele un producto al asistente y di «agregar a la lista».</div>'}
   <div class="lfoot"><div class="t"><b>Total</b><span class="num">${fmt(tot)}</span></div><div class="iva">Incluye IVA ${fmt(tot-tot/(1+IVA))}</div>
   <div class="acts"><button class="btn" data-cmd="facturar" data-label="Facturar" ${dis}>Facturar</button><button class="btn dk" data-cmd="fiar" data-label="Fiar" ${dis}>Fiar</button><button class="btn sec" data-cmd="cotizar" data-label="Cotizar" ${dis}>Cotizar</button></div></div></div>`}
 function vVentas(){const j=isJefe(), h=ventasDe(1,j?null:S.user), fs=S.ventas.filter(v=>j||v.vend===S.user);
@@ -770,7 +776,7 @@ function sheetFact(num){const v=S.ventas.find(x=>x.num===num);if(!v)return;const
 function sheetCot(num){const c=S.cots.find(x=>x.num===num);if(!c)return;
   openSheet(docHTML('Cotización',c,c.cliente,` · ${c.estado}`)+`<div class="sacts"><button class="btn" data-act="cot2lista:${num}">Pasar a la lista para vender</button><button class="btn sec" data-act="copy:c:${num}">Copiar para WhatsApp</button></div>`)}
 function sheetProd(id){
-  if(!isJefe()){const p=prod(+id);if(!p)return;openSheet(`<h3>${esc(p.nombre)}</h3><div class="kpis">${kpi('Precio',fmt(p.precio),'por '+esc(p.unidad))}${kpi('Existencias',p.stock.toLocaleString('es-CO'),'mínimo '+p.min,p.stock<=p.min?'warn':'good')}</div><div class="sacts"><button class="btn" data-act="add:${p.id}">+ A la lista</button></div>`);return}
+  if(!isJefe()){const p=prod(+id);if(!p)return;openSheet(`<h3>${esc(p.nombre)}</h3><div class="kpis">${kpi('Precio',fmt(p.precio),'por '+esc(p.unidad))}${kpi('Existencias',p.stock.toLocaleString('es-CO'),'mínimo '+p.min,p.stock<=p.min?'warn':'good')}</div><div class="radd"><span>Cantidad</span><div class="qty big"><button type="button" data-rq="-1" data-for="sQty" aria-label="Menos">−</button><input id="sQty" type="number" inputmode="numeric" min="1" value="1" aria-label="Cantidad"><button type="button" data-rq="1" data-for="sQty" aria-label="Más">+</button></div><button class="btn" data-act="addq:${p.id}:sQty">Agregar a la lista</button></div>`);return}
   sheetProdEdit(id)}
 function sheetProdEdit(id){const n=id==='new', p=n?{nombre:'',alias:'',unidad:'unidad',cat:'Obra gris',precio:'',costo:'',stock:'',min:'',prov:1}:prod(+id);
   openSheet(`<h3>${n?'Nuevo producto':'Producto'}</h3><form data-form="prod" data-id="${n?'new':p.id}"><div class="fg">
@@ -780,7 +786,7 @@ function sheetProdEdit(id){const n=id==='new', p=n?{nombre:'',alias:'',unidad:'u
   <label>Precio de venta<input name="precio" type="number" inputmode="numeric" min="0" required value="${p.precio}"></label><label>Costo<input name="costo" type="number" inputmode="numeric" min="0" required value="${p.costo}"></label>
   <label>Existencias<input name="stock" type="number" inputmode="numeric" min="0" required value="${p.stock}"></label><label>Mínimo<input name="min" type="number" inputmode="numeric" min="0" required value="${p.min}"></label>
   <label class="w">Proveedor<select name="prov">${S.provs.map(v=>`<option value="${v.id}" ${v.id===p.prov?'selected':''}>${esc(v.nombre)}</option>`).join('')}</select></label></div>
-  <div class="sacts"><button class="btn" type="submit">Guardar</button>${n?'':`<button class="btn dk" type="button" data-act="add:${p.id}">+ A la lista</button>`}</div></form>`)}
+  <div class="sacts"><button class="btn" type="submit">Guardar</button></div></form>${n?'':`<div class="sect">Vender</div><div class="radd"><span>Cantidad</span><div class="qty big"><button type="button" data-rq="-1" data-for="sQty" aria-label="Menos">−</button><input id="sQty" type="number" inputmode="numeric" min="1" value="1" aria-label="Cantidad"><button type="button" data-rq="1" data-for="sQty" aria-label="Más">+</button></div><button class="btn dk" type="button" data-act="addq:${p.id}:sQty">Agregar a la lista</button></div>`}`)}
 function sheetCli(id){if(id==='new'){openSheet(`<h3>Nuevo cliente</h3><form data-form="cli"><div class="fg"><label class="w">Nombre<input name="nombre" required></label><label>Cédula o NIT<input name="doc" required></label><label>Celular<input name="tel" type="tel" required></label><label class="w">Dirección<input name="dir"></label><label>Cupo de crédito<input name="cupo" type="number" inputmode="numeric" min="0" required value="500000"></label><label class="w">Nota<input name="nota"></label></div><div class="sacts"><button class="btn" type="submit">Guardar</button></div></form>`);return}
   const c=cli(+id);
   openSheet(`<h3>${esc(c.nombre)}</h3><div class="kpis">${kpi('Debe',fmt(c.saldo),'',c.saldo?'warn':'good')}${kpi('Cupo disponible',fmt(Math.max(0,c.cupo-c.saldo)),'de '+fmt(c.cupo))}</div><div>${[c.doc?esc((c.tdoc||'CC')+' '+c.doc):'',esc(c.tel||''),esc(c.dir||''),esc(c.nota||'')].filter(Boolean).join(' · ')}</div>
@@ -822,8 +828,9 @@ function copy(t){try{navigator.clipboard.writeText(t).then(()=>toast('Copiado'),
 function refresh(){refreshHome();if(view!=='inicio')renderView()}
 let resetArm=0;
 document.addEventListener('click',e=>{
-  const b=e.target.closest('[data-cmd],[data-act],[data-q],[data-cat]'); if(!b){if(e.target.id==='ov')closeSheet();return}
+  const b=e.target.closest('[data-cmd],[data-act],[data-q],[data-rq],[data-cat]'); if(!b){if(e.target.id==='ov')closeSheet();return}
   if(b.dataset.cat){invCat=b.dataset.cat;renderView();return}
+  if(b.dataset.rq){const i=$('#'+b.dataset.for);i.value=Math.max(1,(parseInt(i.value,10)||1)+(+b.dataset.rq));return}
   if(b.dataset.q){const i=S.lista.find(x=>x.pid===+b.dataset.pid);if(i){i.c+=+b.dataset.q;if(i.c<=0)S.lista=S.lista.filter(x=>x!==i);save();renderView()}return}
   if(b.dataset.cmd){submit(b.dataset.cmd,b.dataset.label||b.textContent.trim());return}
   const [a,x,y]=b.dataset.act.split(':');
@@ -845,6 +852,7 @@ document.addEventListener('click',e=>{
   else if(a==='cli')sheetCli(x);
   else if(a==='cxp')sheetCxp(x);
   else if(a==='prov')sheetProv(x);
+  else if(a==='addq'){const q=Math.max(1,parseInt(($('#'+y)||{}).value,10)||1), p=prod(+x);closeSheet();submit(`#a${x}x${q}`,`Agregar ${q} ${plural(p.unidad,q)} a la lista`)}
   else if(a==='add'){addLista(+x,1);closeSheet();refresh();toast('Agregado a la lista')}
   else if(a==='cot2lista'){const c=S.cots.find(k=>k.num===x);S.lista=c.items.filter(i=>prod(i.pid)).map(i=>({pid:i.pid,c:i.c}));c.estado='Vendida';save();closeSheet();go('ventas');toast('Cotización cargada en la lista')}
   else if(a==='copy'){if(x==='f'){const v=S.ventas.find(k=>k.num===y);copy(docText('Factura',v,v.cli?v.cli.nombre:v.cid?cli(v.cid).nombre:'Mostrador'))}
@@ -863,6 +871,8 @@ document.addEventListener('submit',e=>{const f=e.target.closest('[data-form]');i
   save();closeSheet();refresh()});
 document.addEventListener('input',e=>{if(e.target.id==='invQ'){invQ=e.target.value;$('#invList').innerHTML=invRows()}});
 document.addEventListener('change',e=>{
+  if(e.target.classList.contains('lq')){const i=S.lista.find(x=>x.pid===+e.target.dataset.pid), q=parseInt(e.target.value,10);if(i){if(!(q>0))S.lista=S.lista.filter(x=>x!==i);else i.c=q;save();renderView()}return}
+  
   if(e.target.id==='cieSel'){sheetCierre(e.target.dataset.k,e.target.value||null);return}
   if(e.target.id==='cieEnt'){const dm=e.target.value==='domicilio';$('#cieDirW').hidden=!dm;$('#cieNotaW').hidden=!dm;if(dm&&!$('#cieDir').value)$('#cieDir').value=e.target.form.dir.value;return}
   if(e.target.id==='voiceSel'){cfg.voice=e.target.value;saveCfg();speak('Hola, esta es mi voz.')}});
