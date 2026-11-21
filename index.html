@@ -92,6 +92,8 @@ input,select{font:inherit;color:inherit}
 .logoRow{display:flex;align-items:center;gap:12px}
 .logoPrev{width:84px;height:84px;border-radius:14px;border:1.5px dashed #CFC9F7;background:#fff;display:grid;place-items:center;flex:none;overflow:hidden}
 .logoPrev img{max-width:100%;max-height:100%}.logoPrev span{font-size:12px;color:var(--mut)}
+.pli{grid-template-columns:1fr auto}
+.rm{width:30px;height:30px;border-radius:9px;color:var(--mut);background:#F3F2FB;font-size:13px;justify-self:end}
 .opts{display:grid;gap:6px;margin-top:10px}
 .opts button{text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 12px;font-weight:500}
 .cfm{display:flex;gap:8px;margin-top:11px}
@@ -487,6 +489,9 @@ function brain(raw){
   if(/\b(acab|agot|escas)|stock bajo|por pedir|que pedir|hace falta|hay que pedir/.test(n)){
     const l=lowStock(); if(!l.length)return R('Todo el inventario está por encima del mínimo.');
     return R(`Hay ${l.length} productos por debajo del mínimo. Los más urgentes: ${l.slice(0,3).map(p=>p.nombre).join(', ')}.`,{rows:l.map(p=>[p.nombre,`${p.stock} / mín. ${p.min}`]),nav:'inventario'})}
+  if(/\b(pedido|pedidos|pedir|pidale|pedirle|pidamos|encargar|encargue|encarguemos)\b/.test(n)){
+    const ps=findProv(n.replace(/\b(hacer|haga|hagale|hagamos|hazle|haz|un|una|pedido|pedidos|pedir|pidale|pedirle|pidamos|encargar|encargue|encarguemos|nuevo|proveedor|quiero|necesito|vamos)\b/g,''));
+    return R(ps.length===1?`Abro el pedido para ${ps[0].nombre}.`:'¿A qué proveedor le hacemos el pedido?',{pedido:{prov:ps.length===1?ps[0].id:null}})}
   if(/\b(proveedor|proveedores|surte)\b|\bquien (nos |me )?(vende|trae)\b/.test(n)){
     const f=findProds(n.replace(/\b(proveedor|proveedores|surte|quien|vende|trae)\b/g,''));
     if(f.length>=1){const p=f[0],pv=prv(p.prov);return R(`${p.nombre} nos lo surte ${pv.nombre}. Contacto: ${pv.contacto}, teléfono ${pv.tel}.`,{nav:'proveedores'})}
@@ -699,6 +704,7 @@ async function submit(text,label){
     }catch(e){}}
   busy=false; renderReply(r); refreshHome(); upd();
   if(r.form){conv=false;sheetCierre(r.form.k,r.form.cid)}
+  if(r.pedido){conv=false;if(r.pedido.prov)sheetPedido(r.pedido.prov);else sheetPickProv()}
   const done=await speak(r.text);
   if(conv&&done!==false&&dict&&!listening)startListen(true);
   upd()}
@@ -736,17 +742,16 @@ function vClientes(){const ds=S.clientes, tot=porCobrar();
   `<div class="kpis">${kpi('Por cobrar',fmt(tot),'','warn')}${kpi('Con saldo',ds.filter(c=>c.saldo>0).length,'clientes')}${kpi('Cerca del cupo',ds.filter(c=>c.cupo&&c.saldo/c.cupo>=.9).length,'90 % o más',ds.some(c=>c.cupo&&c.saldo/c.cupo>=.9)?'bad':'')}${kpi('Clientes',ds.length)}</div>
   <input class="search" id="cliQ" type="search" placeholder="Buscar por nombre, cédula o celular…" value="${esc(cliQ)}" aria-label="Buscar cliente">
   <div class="card list" id="cliList">${cliRows()}</div>`}
-function vCompras(){const l=S.cxp.slice().sort((a,b)=>a.vence<b.vence?-1:1), ve=vencidas(), now=new Date();
-  const ped=S.provs.map(p=>({p,n:S.prods.filter(x=>x.prov===p.id&&x.stock<=x.min).length})).filter(x=>x.n);
-  const pedH=`<div class="sect">Pedidos sugeridos</div>${ped.length?`<div class="card list">${ped.map(x=>`<button class="rowi" data-act="prov:${x.p.id}"><span class="nm">${esc(x.p.nombre)}</span><span class="sb">Toca para ver el pedido</span><span class="r"><span class="pill low">${x.n} por pedir</span></span></button>`).join('')}</div>`:'<div class="card empty">Nada por pedir: todo está sobre el mínimo.</div>'}`;
-  if(!isJefe())return head('Compras','Lo que hay que pedir. Las deudas con proveedores las ve el jefe.')+pedH;
-  return head('Compras','Lo que la ferretería debe a proveedores y lo que hay que pedir.')+
-  `<div class="kpis">${kpi('Total por pagar',fmt(porPagar()),'','warn')}${kpi('Vencido',fmt(ve.reduce((a,c)=>a+c.valor-c.pagado,0)),ve.length+' facturas',ve.length?'bad':'good')}</div>
-  <div class="sect">Facturas de proveedores</div><div class="card list">${l.map(c=>{const s=c.valor-c.pagado, dd=Math.ceil((new Date(c.vence)-now)/864e5);return`<button class="rowi" data-act="cxp:${c.id}"><span class="nm">${esc(prv(c.prov).nombre)}</span><span class="sb">Factura ${esc(c.ref)} · vence ${fdate(c.vence)}${c.pagado?' · abonado '+fmt(c.pagado):''}</span><span class="r"><b>${fmt(s)}</b><span class="pill ${s<=0?'':dd<0?'bad':dd<=7?'low':'neu'}">${s<=0?'Pagada':dd<0?'Vencida hace '+(-dd)+' d':'En '+dd+' días'}</span></span></button>`}).join('')}</div>
-  ${pedH}`}
-function vProv(){return head('Proveedores','Toca uno para ver qué surte y el pedido sugerido.')+
-  `<div class="card list">${S.provs.map(p=>{const d=S.cxp.filter(c=>c.prov===p.id).reduce((a,c)=>a+c.valor-c.pagado,0), n=S.prods.filter(x=>x.prov===p.id), low=n.filter(x=>x.stock<=x.min).length;
-   return`<button class="rowi" data-act="prov:${p.id}"><span class="nm">${esc(p.nombre)}</span><span class="sb">${esc(p.contacto)} · ${esc(p.tel)} · ${n.length} productos</span><span class="r">${isJefe()?`<b>${d?fmt(d):'—'}</b>`:''}<span class="pill ${low?'low':''}">${low?low+' por pedir':'Surtido'}</span></span></button>`}).join('')}</div>`}
+function vCompras(){const j=isJefe(), l=S.cxp.slice().sort((a,b)=>a.vence<b.vence?-1:1), ve=vencidas(), now=new Date(), ps=pedInit().slice().reverse();
+  const sug=S.provs.map(p=>({p,n:habOf(p).map(prod).filter(x=>x&&x.stock<=x.min).length})).filter(x=>x.n);
+  return head('Compras',j?'Pedidos a proveedores y lo que la ferretería les debe.':'Pedidos a proveedores. Las deudas las ve el jefe.','<button class="btn sm" data-act="pedido:">Hacer pedido</button>')+
+  (j?`<div class="kpis">${kpi('Total por pagar',fmt(porPagar()),'','warn')}${kpi('Vencido',fmt(ve.reduce((a,c)=>a+c.valor-c.pagado,0)),nf(ve.length),ve.length?'bad':'good')}</div>`:'')+
+  `<div class="sect">Pedidos sugeridos</div>${sug.length?`<div class="card list">${sug.map(x=>`<button class="rowi" data-act="pedido:${x.p.id}"><span class="nm">${esc(x.p.nombre)}</span><span class="sb">Toca para armar el pedido</span><span class="r"><span class="pill low">${x.n} por pedir</span></span></button>`).join('')}</div>`:'<div class="card empty">Nada por pedir: todo está sobre el mínimo.</div>'}
+  <div class="sect">Historial de pedidos</div>${ps.length?`<div class="card list">${ps.slice(0,40).map(o=>`<button class="rowi" data-act="ped:${o.num}"><span class="nm">${o.num} · ${esc((prv(o.prov)||{}).nombre||'Proveedor')}</span><span class="sb">${fdate(o.fecha)} · ${o.items.length} ${o.items.length===1?'producto':'productos'}</span><span class="r">${j?`<b>${fmt(pedTotal(o))}</b>`:''}<span class="pill ${o.estado==='Recibido'?'':'low'}">${o.estado}</span></span></button>`).join('')}</div>`:'<div class="card empty">Aún no hay pedidos.</div>'}`+
+  (j?`<div class="vtop" style="height:auto;margin:18px 0 8px"><h2 style="font-size:16px">Facturas de proveedores</h2><button class="btn sec sm" data-act="cxpnew">+ Factura</button></div><div class="card list">${l.length?l.map(c=>{const s=c.valor-c.pagado, dd=Math.ceil((new Date(c.vence)-now)/864e5);return`<button class="rowi" data-act="cxp:${c.id}"><span class="nm">${esc((prv(c.prov)||{}).nombre||'Proveedor')}</span><span class="sb">Factura ${esc(c.ref)} · vence ${fdate(c.vence)}${c.pagado?' · abonado '+fmt(c.pagado):''}</span><span class="r"><b>${fmt(s)}</b><span class="pill ${s<=0?'':dd<0?'bad':dd<=7?'low':'neu'}">${s<=0?'Pagada':dd<0?'Vencida hace '+(-dd)+' d':'En '+dd+' días'}</span></span></button>`}).join(''):'<div class="empty">Sin facturas registradas.</div>'}</div>`:'')}
+function vProv(){return head('Proveedores','Toca uno para ver sus productos y hacerle un pedido.',isJefe()?'<button class="btn sm" data-act="provnew">+ Proveedor</button>':'')+
+  `<div class="card list">${S.provs.map(p=>{const d=S.cxp.filter(c=>c.prov===p.id).reduce((a,c)=>a+c.valor-c.pagado,0), n=habOf(p).map(prod).filter(Boolean), low=n.filter(x=>x.stock<=x.min).length;
+   return`<button class="rowi" data-act="prov:${p.id}"><span class="nm">${esc(p.nombre)}</span><span class="sb">${esc(p.contacto||'')} · ${esc(p.tel||'')} · ${n.length} productos</span><span class="r">${isJefe()?`<b>${d?fmt(d):'—'}</b>`:''}<span class="pill ${low?'low':''}">${low?low+' por pedir':'Surtido'}</span></span></button>`}).join('')}</div>`}
 function vRep(){
   if(!isJefe()){const u=me(), hv=ventasDe(1,u.id), wv=ventasDe(7,u.id), days=dayTotals(7,u.id), mx=Math.max(1,...days.map(d=>d.v));
     return head('Reportes',`Tus ventas, ${esc(u.nombre)}.`)+`<div class="kpis">${kpi('Vendiste hoy',fmt(hv.total),nf(hv.n),'good')}${kpi('Últimos 7 días',fmt(wv.total),nf(wv.n))}</div>
@@ -818,11 +823,11 @@ function sheetCli(id){if(id==='new'){openSheet(`<h3>Nuevo cliente</h3><form data
 function sheetCxp(id){const c=S.cxp.find(x=>x.id===+id), s=c.valor-c.pagado;
   openSheet(`<h3>${esc(prv(c.prov).nombre)}</h3><table class="tbl"><tr><td>Factura</td><td>${esc(c.ref)}</td></tr><tr><td>Valor</td><td>${fmt(c.valor)}</td></tr><tr><td>Abonado</td><td>${fmt(c.pagado)}</td></tr><tr><td>Vence</td><td>${fdate(c.vence)}</td></tr><tr class="tot"><td>Saldo</td><td>${fmt(s)}</td></tr></table>
   ${s>0?`<form data-form="pago" data-id="${c.id}"><div class="fg" style="margin-top:10px"><label class="w">Valor a pagar<input name="v" type="number" inputmode="numeric" min="1" max="${s}" value="${s}" required></label></div><div class="sacts"><button class="btn" type="submit">Registrar pago</button></div></form><p class="note">Solo registra el pago aquí; no mueve dinero.</p>`:''}`)}
-function sheetProv(id){const p=prv(+id), ps=S.prods.filter(x=>x.prov===p.id), low=ps.filter(x=>x.stock<=x.min);
-  const ped=low.map(x=>({x,c:Math.max(x.min*2-x.stock,1)})), tp=ped.reduce((a,i)=>a+i.c*i.x.costo,0);
-  openSheet(`<h3>${esc(p.nombre)}</h3><div>${esc(p.contacto)} · ${esc(p.tel)}</div>
-  <div class="sect">Pedido sugerido</div>${ped.length?`<div class="card"><table class="tbl">${ped.map(i=>`<tr><td>${i.c} ${esc(plural(i.x.unidad,i.c))} · ${esc(i.x.nombre)}<br><span style="color:var(--mut);font-size:12.5px">hay ${i.x.stock}, mínimo ${i.x.min}</span></td><td>${isJefe()?fmt(i.c*i.x.costo):''}</td></tr>`).join('')}${isJefe()?`<tr class="tot"><td>Total estimado</td><td>${fmt(tp)}</td></tr>`:''}</table></div><div class="sacts"><button class="btn sec" data-act="copy:p:${p.id}">Copiar pedido para WhatsApp</button></div>`:'<div class="empty" style="padding:12px">Nada por pedir: todo está sobre el mínimo.</div>'}
-  <div class="sect">Productos que surte</div><div class="card"><table class="tbl">${ps.map(x=>`<tr><td>${esc(x.nombre)}</td><td>${x.stock}</td></tr>`).join('')}</table></div>`)}
+function sheetProv(id){const p=prv(+id), ps=habOf(p).map(prod).filter(Boolean), hist=pedInit().filter(o=>o.prov===p.id).slice().reverse().slice(0,5);
+  openSheet(`<h3>${esc(p.nombre)}</h3><div>${esc(p.contacto||'')} · ${esc(p.tel||'')}</div>
+  <div class="sacts"><button class="btn" data-act="pedido:${p.id}">Hacer pedido</button></div>
+  <div class="sect">Últimos pedidos</div>${hist.length?`<div class="card list">${hist.map(o=>`<button class="rowi" data-act="ped:${o.num}"><span class="nm">${o.num}</span><span class="sb">${fdate(o.fecha)} · ${o.items.length} ${o.items.length===1?'producto':'productos'}</span><span class="r"><span class="pill ${o.estado==='Recibido'?'':'low'}">${o.estado}</span></span></button>`).join('')}</div>`:'<div class="empty" style="padding:10px">Aún no se le ha hecho ningún pedido.</div>'}
+  <div class="sect">Productos habituales</div><div class="card">${ps.length?`<table class="tbl">${ps.map(x=>`<tr><td>${esc(x.nombre)}</td><td>${x.stock<=x.min?'<span class="pill low">bajo</span> ':''}${x.stock}</td></tr>`).join('')}</table>`:'<div class="empty">Se agregan al hacer el primer pedido.</div>'}</div>`)}
 function sheetCierre(k,cid){
   if(!S.lista.length){toast('La lista está vacía');return}
   const T={venta:'Facturar',fiar:'Fiar',cot:'Cotizar'}[k], tot=listaTotal(), fin=cid==='final', c=cid&&!fin?cli(+cid):null;
@@ -861,21 +866,23 @@ function copy(t){try{navigator.clipboard.writeText(t).then(()=>toast('Copiado'),
 let jsPDFp=null,pdfCur=null;
 function loadScript(src){return new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=()=>{s.remove();rej()};document.head.appendChild(s)})}
 function needPDF(){return jsPDFp||(jsPDFp=loadScript('jspdf.umd.min.js').catch(()=>loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js')).then(()=>window.jspdf.jsPDF).catch(e=>{jsPDFp=null;throw e}))}
-async function makePDF(tipo,d){
-  const J=await needPDF(), EMP=emp(), logo=EMP.logo, doc=new J({unit:'mm',format:'letter'}), W=215.9, M=15, R=W-M;
-  const mon=n=>'$ '+Math.round(n).toLocaleString('es-CO'), fac=tipo==='Factura';
-  const ink=()=>doc.setTextColor(30,35,71), mut=()=>doc.setTextColor(105,110,140);
+function pdfHead(doc,EMP,titulo,num,fecha){const W=215.9,M=15,R=W-M,logo=EMP.logo,ink=()=>doc.setTextColor(30,35,71),mut=()=>doc.setTextColor(105,110,140);
   let y=M;
   let lw=0;
   if(logo){try{const r=(EMP.lw||1)/(EMP.lh||1), hh=r>1.6?20/r*1.6:20, ww=hh*r;lw=Math.min(ww,34);doc.addImage(logo,/^data:image\/jpe?g/.test(logo)?'JPEG':'PNG',M,y+(20-lw/r)/2,lw,lw/r)}catch(e){lw=0}}
   const lx=lw?M+lw+4:M, l3=[EMP.dir,EMP.tel?'Tel. '+EMP.tel:''].filter(Boolean).join(' · ');
   const av=R-60-lx;let fs=16;doc.setFont('helvetica','bold');doc.setFontSize(fs);while(fs>10&&doc.getTextWidth(EMP.nombre)>av){fs-=.5;doc.setFontSize(fs)}ink();doc.text(doc.splitTextToSize(EMP.nombre,av)[0],lx,y+7);
   doc.setFont('helvetica','normal');doc.setFontSize(9);mut();if(EMP.nit)doc.text('NIT '+EMP.nit,lx,y+12.5);if(l3)doc.text(doc.splitTextToSize(l3,av)[0],lx,y+(EMP.nit?17:12.5));
-  doc.setFont('helvetica','bold');doc.setFontSize(13);ink();doc.text(fac?'FACTURA DE VENTA':'COTIZACIÓN',R,y+6,{align:'right'});
-  doc.setFontSize(12);doc.setTextColor(108,92,231);doc.text('N.º '+d.num,R,y+12,{align:'right'});
+  doc.setFont('helvetica','bold');doc.setFontSize(13);ink();doc.text(titulo,R,y+6,{align:'right'});
+  doc.setFontSize(12);doc.setTextColor(108,92,231);doc.text('N.º '+num,R,y+12,{align:'right'});
   doc.setFont('helvetica','normal');doc.setFontSize(9);mut();
-  doc.text(new Date(d.fecha).toLocaleDateString('es-CO',{day:'numeric',month:'long',year:'numeric'})+' · '+ftime(d.fecha),R,y+17,{align:'right'});
-  y+=27;
+  doc.text(new Date(fecha).toLocaleDateString('es-CO',{day:'numeric',month:'long',year:'numeric'})+' · '+ftime(fecha),R,y+17,{align:'right'});
+  return y+27}
+async function makePDF(tipo,d){
+  const J=await needPDF(), EMP=emp(), logo=EMP.logo, doc=new J({unit:'mm',format:'letter'}), W=215.9, M=15, R=W-M;
+  const mon=n=>'$ '+Math.round(n).toLocaleString('es-CO'), fac=tipo==='Factura';
+  const ink=()=>doc.setTextColor(30,35,71), mut=()=>doc.setTextColor(105,110,140);
+  let y=pdfHead(doc,EMP,fac?'FACTURA DE VENTA':'COTIZACIÓN',d.num,d.fecha);
   const c=d.cli||{}, nom=c.nombre||d.cliente||(d.cid&&cli(d.cid)?cli(d.cid).nombre:'Cliente de mostrador'), ent=d.entrega, v=usr(d.vend);
   const L=[['Cliente',nom],[c.tdoc||'Documento',c.doc||'—'],['Celular',c.tel||'—'],['Dirección',c.dir||'—']];
   const Rr=[fac?['Forma de pago',d.credito?'Crédito':'Contado']:['Estado',d.estado||'Pendiente'],['Atendido por',v?v.nombre:'—'],['Entrega',!ent?'—':ent.tipo==='domicilio'?'A domicilio':'Recoge en la tienda']];
@@ -909,10 +916,10 @@ async function makePDF(tipo,d){
   doc.setFont('helvetica','normal');doc.setFontSize(8.5);mut();
   doc.text(['Los precios de venta incluyen el IVA del 19 %; aquí se discrimina el valor sin IVA y el impuesto.',fac?'Documento de prueba generado por FerreControl. No reemplaza la factura electrónica ante la DIAN.':'Cotización generada por FerreControl. Precios y existencias sujetos a cambio.'].concat(EMP.pie?doc.splitTextToSize(EMP.pie,R-M):[]),M,y+18);
   const blob=doc.output('blob'), name=`${fac?'Factura':'Cotizacion'}-${d.num}.pdf`;
-  return{blob,name,file:new File([blob],name,{type:'application/pdf'}),url:URL.createObjectURL(blob),nom,tel:c.tel||'',tipo,d}}
+  return{blob,name,file:new File([blob],name,{type:'application/pdf'}),url:URL.createObjectURL(blob),tel:c.tel||'',txt:`${tipo} ${d.num} de ${EMP.nombre} por ${fmt(d.total)} (IVA incluido).`}}
 const PDFBTN='<div class="sacts" id="pdfActs"><button class="btn" data-act="pdf:wa" disabled>Enviar por WhatsApp</button><button class="btn dk" data-act="pdf:print" disabled>Imprimir</button><button class="btn sec" data-act="pdf:down" disabled>Descargar PDF</button></div><p class="note" id="pdfMsg">Preparando el PDF…</p>';
 function prepPDF(tipo,d){if(pdfCur){try{URL.revokeObjectURL(pdfCur.url)}catch(e){}}pdfCur=null;
-  makePDF(tipo,d).then(p=>{pdfCur=p;const a=$('#pdfActs');if(a){a.querySelectorAll('button').forEach(b=>b.disabled=false);$('#pdfMsg').textContent='PDF listo: '+p.name}},
+  (tipo==='Pedido'?makePedPDF(d):makePDF(tipo,d)).then(p=>{pdfCur=p;const a=$('#pdfActs');if(a){a.querySelectorAll('button').forEach(b=>b.disabled=false);$('#pdfMsg').textContent='PDF listo: '+p.name}},
     ()=>{const m=$('#pdfMsg');if(m)m.textContent='No se pudo preparar el PDF. Revisa la conexión e inténtalo de nuevo.'})}
 function pdfDown(){const a=document.createElement('a');a.href=pdfCur.url;a.download=pdfCur.name;document.body.appendChild(a);a.click();a.remove()}
 function pdfAct(x){const p=pdfCur;if(!p)return;
@@ -922,19 +929,83 @@ function pdfAct(x){const p=pdfCur;if(!p)return;
       else{let f=$('#pdfFrame');if(f)f.remove();f=document.createElement('iframe');f.id='pdfFrame';f.style.cssText='position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0';f.src=p.url;
         f.onload=()=>{try{f.contentWindow.focus();f.contentWindow.print()}catch(e){window.open(p.url,'_blank')}};document.body.appendChild(f)}
     }catch(e){toast('Aquí no se puede imprimir')}}
-  else if(x==='wa'){const txt=`${p.tipo} ${p.d.num} de ${emp().nombre} por ${fmt(p.d.total)} (IVA incluido).`;
+  else if(x==='wa'){const txt=p.txt;
     try{if(navigator.canShare&&navigator.canShare({files:[p.file]})){navigator.share({files:[p.file],title:p.name,text:txt}).catch(()=>{});return}}catch(e){}
     try{pdfDown()}catch(e){}
     const n=p.tel.replace(/\D/g,''), to=n.length===10?'57'+n:n;
     try{window.open('https://wa.me/'+to+'?text='+encodeURIComponent(txt),'_blank')}catch(e){}
     toast('PDF descargado: adjúntalo en el chat')}}
 
+/* ---------- pedidos a proveedores ---------- */
+function pedInit(){if(!S.pedidos){const D=n=>new Date(Date.now()-n*864e5).toISOString(), it=(id,c)=>{const p=prod(id);return{pid:id,n:p.nombre,u:p.unidad,c,k:p.costo}};S.pedidos=[];
+    if(prod(1)&&prod(3)&&prod(10)&&prod(13)){S.pedidos.push({num:'PD-099',fecha:D(28),prov:1,vend:1,items:[it(1,150),it(3,2000)],nota:'',estado:'Recibido',recibido:D(25)},{num:'PD-100',fecha:D(12),prov:3,vend:1,items:[it(10,60),it(13,200)],nota:'',estado:'Recibido',recibido:D(10)})}}
+  if(!S.seq.pd)S.seq.pd=101; return S.pedidos}
+const habOf=p=>p.hab||(p.hab=S.prods.filter(x=>x.prov===p.id).map(x=>x.id));
+const sugQty=x=>x.stock<=x.min?Math.max(x.min*2-x.stock,1):0;
+const pedTotal=o=>o.items.reduce((a,i)=>a+i.c*i.k,0);
+let pedD=null;
+function sheetPickProv(){openSheet(`<h3>¿A qué proveedor?</h3><input class="search" id="ppQ" type="search" placeholder="Buscar proveedor…" aria-label="Buscar proveedor"><div class="card list" id="ppList">${pickRows('')}</div>`);try{$('#ppQ').focus()}catch(e){}}
+function pickRows(q){const n=norm(q), l=S.provs.filter(p=>!n||norm(p.nombre+' '+(p.contacto||'')).includes(n));
+  return l.length?l.map(p=>{const low=habOf(p).map(prod).filter(x=>x&&x.stock<=x.min).length;return`<button class="rowi" data-act="pedido:${p.id}"><span class="nm">${esc(p.nombre)}</span><span class="sb">${esc(p.contacto||'')} · ${habOf(p).length} productos habituales</span><span class="r"><span class="pill ${low?'low':'neu'}">${low?low+' por pedir':'Pedir'}</span></span></button>`}).join(''):'<div class="empty">Sin resultados.</div>'}
+function sheetPedido(pid,keep){const p=prv(+pid);if(!p)return sheetPickProv();pedInit();
+  if(!keep||!pedD||pedD.prov!==p.id){pedD={prov:p.id,q:{},nota:''};habOf(p).forEach(id=>{const x=prod(id);if(x){const s=sugQty(x);if(s)pedD.q[id]=s}})}
+  const hs=habOf(p).map(prod).filter(Boolean), n=Object.values(pedD.q).filter(v=>v>0).length;
+  openSheet(`<h3>Pedido a ${esc(p.nombre)}</h3><p class="note" style="margin:-4px 0 10px">Productos habituales de este proveedor. Pon la cantidad en los que vas a pedir; con ✕ lo quitas de los habituales.</p>
+  <div class="card list">${hs.length?hs.map(x=>`<div class="li pli"><div class="nm">${esc(x.nombre)}</div><button type="button" class="rm" data-act="habdel:${x.id}" aria-label="Quitar ${esc(x.nombre)} de los habituales">✕</button><div class="sb">Hay ${x.stock.toLocaleString('es-CO')} · mínimo ${x.min}${x.stock<=x.min?' · <b style="color:var(--warn)">bajo</b>':''}</div><div class="qty"><button type="button" data-pq="-1" data-pid="${x.id}" aria-label="Menos">−</button><input class="pq" type="number" inputmode="numeric" min="0" value="${pedD.q[x.id]||0}" data-pid="${x.id}" aria-label="Cantidad de ${esc(x.nombre)}"><button type="button" data-pq="1" data-pid="${x.id}" aria-label="Más">+</button></div></div>`).join(''):'<div class="empty">Este proveedor aún no tiene productos habituales. Agrégalos abajo.</div>'}</div>
+  <div class="fg" style="margin-top:12px"><label class="w">Agregar producto del inventario<input id="pedQ" type="search" autocomplete="off" placeholder="Buscar producto…"></label><div class="w" id="pedRes"></div>
+  <label class="w">Nota para el proveedor<input id="pedNota" value="${esc(pedD.nota)}" placeholder="Fecha de entrega, condiciones…"></label></div>
+  <div class="sacts"><button class="btn" data-act="pedgo" id="pedGo">Generar pedido (${n})</button><button class="btn sec" data-act="close">Cancelar</button></div>`)}
+function pedSearch(){const q=norm($('#pedQ').value), p=prv(pedD.prov), hab=habOf(p);
+  const r=q?S.prods.filter(x=>!hab.includes(x.id)&&norm(x.nombre+' '+x.alias).includes(q)).slice(0,6):[];
+  $('#pedRes').innerHTML=r.map(x=>`<button type="button" class="cres" data-act="habadd:${x.id}"><b>+ ${esc(x.nombre)}</b><small>Hay ${x.stock} · mínimo ${x.min}</small></button>`).join('')+(q&&!r.length?'<div class="empty" style="padding:8px">No hay más productos con ese nombre.</div>':'')}
+function pedCount(){const n=Object.values(pedD.q).filter(v=>v>0).length,b=$('#pedGo');if(b)b.textContent=`Generar pedido (${n})`}
+function pedCrear(){const p=prv(pedD.prov), items=habOf(p).map(prod).filter(x=>x&&pedD.q[x.id]>0).map(x=>({pid:x.id,n:x.nombre,u:x.unidad,c:pedD.q[x.id],k:x.costo}));
+  if(!items.length){toast('Pon la cantidad en al menos un producto');return}
+  pedInit();const o={num:'PD-'+(S.seq.pd++),fecha:new Date().toISOString(),prov:p.id,vend:S.user,items,nota:($('#pedNota')||{}).value||'',estado:'Enviado'};
+  S.pedidos.push(o);pedD=null;save();refresh();sheetPed(o.num);toast('Pedido '+o.num+' guardado')}
+function sheetPed(num){const o=pedInit().find(x=>x.num===num);if(!o)return;const p=prv(o.prov)||{nombre:'Proveedor'},j=isJefe();
+  openSheet(`<div class="fact"><div class="hd"><div><b>Pedido ${o.num}</b><br>${esc(p.nombre)}</div><div style="text-align:right">${fdate(o.fecha)}<br><span class="pill ${o.estado==='Recibido'?'':'low'}">${o.estado}</span></div></div>
+  <div style="color:var(--mut);font-size:13.5px">Pedido por ${esc((usr(o.vend)||{}).nombre||'—')}${o.recibido?' · recibido el '+fdate(o.recibido):''}${o.nota?'<br>Nota: '+esc(o.nota):''}</div>
+  <table class="tbl" style="margin-top:6px">${o.items.map(i=>`<tr><td style="padding-left:0">${esc(i.n)}${j?`<br><span style="color:var(--mut);font-size:12.5px">costo ${fmt(i.k)} / ${esc(i.u)}</span>`:''}</td><td style="padding-right:0">${i.c.toLocaleString('es-CO')} ${esc(plural(i.u,i.c))}</td></tr>`).join('')}${j?`<tr class="tot"><td style="padding-left:0">Valor estimado</td><td style="padding-right:0">${fmt(pedTotal(o))}</td></tr>`:''}</table></div>`
+  +PDFBTN+`<div class="sacts">${o.estado==='Enviado'?`<button class="btn" data-act="pedrec:${o.num}">Recibir pedido</button>`:''}<button class="btn sec" data-act="pedrep:${o.num}">Repetir pedido</button></div>`);prepPDF('Pedido',o)}
+function sheetRecibir(num){const o=pedInit().find(x=>x.num===num);if(!o)return;const j=isJefe();
+  openSheet(`<h3>Recibir ${o.num}</h3><p class="note" style="margin:-4px 0 10px">Confirma lo que llegó. Al guardar, las cantidades entran al inventario.</p><form data-form="recibir" data-num="${o.num}">
+  <div class="card list">${o.items.map((i,k)=>`<div class="li"><div class="nm">${esc(i.n)}</div><div class="qty"><input name="q${k}" type="number" inputmode="numeric" min="0" value="${i.c}" aria-label="Cantidad recibida de ${esc(i.n)}"></div><div class="sb">Pedido: ${i.c} ${esc(plural(i.u,i.c))}</div></div>`).join('')}</div>
+  ${j?`<div class="sect">Factura del proveedor</div><div class="fg"><label>N.º de factura<input name="ref" placeholder="Opcional"></label><label>Valor a pagar<input name="valor" type="number" inputmode="numeric" min="0" value="${Math.round(pedTotal(o))}"></label><label class="w">Plazo para pagar (días)<input name="plazo" type="number" inputmode="numeric" min="0" value="30"></label></div><p class="note">Si pones un valor, queda como deuda con el proveedor en Compras. Deja 0 si se pagó de contado.</p>`:'<p class="note">La factura del proveedor la registra el administrador.</p>'}
+  <div class="sacts"><button class="btn" type="submit">Guardar recepción</button><button class="btn sec" type="button" data-act="ped:${o.num}">Volver</button></div></form>`)}
+async function makePedPDF(o){
+  const J=await needPDF(), EMP=emp(), doc=new J({unit:'mm',format:'letter'}), W=215.9, M=15, R=W-M, p=prv(o.prov)||{nombre:'Proveedor'}, v=usr(o.vend);
+  const ink=()=>doc.setTextColor(30,35,71), mut=()=>doc.setTextColor(105,110,140);
+  let y=pdfHead(doc,EMP,'REMISIÓN DE PEDIDO',o.num,o.fecha);
+  const L=[['Proveedor',p.nombre],['Contacto',p.contacto||'—'],['Teléfono',p.tel||'—']], Rr=[['Solicita',EMP.nombre],['Pedido por',v?v.nombre:'—'],['Entregar en',EMP.dir||'La ferretería']];
+  if(o.nota)Rr.push(['Nota',o.nota]);
+  const mid=M+98, wL=mid-M-30, wR=R-mid-30; doc.setFontSize(9.5);
+  const hOf=(rows,w)=>rows.reduce((a,r)=>a+doc.splitTextToSize(String(r[1]),w).length*4.6,0), bh=Math.max(hOf(L,wL),hOf(Rr,wR))+7;
+  doc.setFillColor(244,243,252);doc.roundedRect(M,y,R-M,bh,2.5,2.5,'F');
+  const col=(rows,x,w)=>{let yy=y+6.5;rows.forEach(r=>{doc.setFont('helvetica','normal');mut();doc.text(r[0],x,yy);doc.setFont('helvetica','bold');ink();const t=doc.splitTextToSize(String(r[1]),w);doc.text(t,x+26,yy);yy+=t.length*4.6})};
+  col(L,M+4,wL);col(Rr,mid,wR);y+=bh+6;
+  const th=()=>{doc.setFillColor(30,35,71);doc.rect(M,y,R-M,8,'F');doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(255);
+    doc.text('N.º',M+3,y+5.3);doc.text('Descripción',M+15,y+5.3);doc.text('Unidad',M+125,y+5.3);doc.text('Cantidad',R-3,y+5.3,{align:'right'});y+=8};
+  th();
+  o.items.forEach((it,k)=>{const lines=doc.splitTextToSize(it.n,105), rh=Math.max(7,lines.length*4.4+2.6);
+    if(y+rh>262){doc.addPage();y=M;th()}
+    if(k%2){doc.setFillColor(249,248,254);doc.rect(M,y,R-M,rh,'F')}
+    doc.setFont('helvetica','normal');doc.setFontSize(9.5);ink();doc.text(String(k+1),M+3,y+4.8);doc.text(lines,M+15,y+4.8);doc.text(it.u,M+125,y+4.8);
+    doc.setFont('helvetica','bold');doc.text(it.c.toLocaleString('es-CO'),R-3,y+4.8,{align:'right'});y+=rh});
+  doc.setDrawColor(30,35,71);doc.setLineWidth(.4);doc.line(M,y,R,y);y+=7;
+  doc.setFont('helvetica','bold');doc.setFontSize(10);ink();doc.text(`Total: ${o.items.length} ${o.items.length===1?'producto':'productos'}`,R-3,y,{align:'right'});y+=9;
+  doc.setFont('helvetica','normal');doc.setFontSize(8.5);mut();
+  doc.text(['Favor confirmar disponibilidad, precios y fecha de entrega.','Pedido generado por FerreControl.'].concat(EMP.tel?['Contacto de la ferretería: '+EMP.tel]:[]),M,y);
+  const blob=doc.output('blob'), name=`Pedido-${o.num}.pdf`;
+  return{blob,name,file:new File([blob],name,{type:'application/pdf'}),url:URL.createObjectURL(blob),tel:p.tel||'',txt:`Pedido ${o.num} de ${EMP.nombre} para ${p.nombre}. Favor confirmar disponibilidad y fecha de entrega.`}}
+
 /* ---------- eventos ---------- */
 function refresh(){refreshHome();if(view!=='inicio')renderView()}
 let resetArm=0;
 document.addEventListener('click',e=>{
-  const b=e.target.closest('[data-cmd],[data-act],[data-q],[data-rq],[data-cat]'); if(!b){if(e.target.id==='ov')closeSheet();return}
+  const b=e.target.closest('[data-cmd],[data-act],[data-q],[data-rq],[data-pq],[data-cat]'); if(!b){if(e.target.id==='ov')closeSheet();return}
   if(b.dataset.cat){invCat=b.dataset.cat;renderView();return}
+  if(b.dataset.pq){const id=+b.dataset.pid,v=Math.max(0,(pedD.q[id]||0)+(+b.dataset.pq));pedD.q[id]=v;b.parentNode.querySelector('input').value=v;pedCount();return}
   if(b.dataset.rq){const i=$('#'+b.dataset.for);i.value=Math.max(1,(parseInt(i.value,10)||1)+(+b.dataset.rq));return}
   if(b.dataset.q){const i=S.lista.find(x=>x.pid===+b.dataset.pid);if(i){i.c+=+b.dataset.q;if(i.c<=0)S.lista=S.lista.filter(x=>x!==i);save();renderView()}return}
   if(b.dataset.cmd){submit(b.dataset.cmd,b.dataset.label||b.textContent.trim());return}
@@ -951,6 +1022,15 @@ document.addEventListener('click',e=>{
   else if(a==='reset'){if(Date.now()-resetArm>3000){resetArm=Date.now();toast('Toca otra vez para borrar los cambios');return}
     resetArm=0;{const e=S.emp;S=seed();if(e)S.emp=e}save();ctx.lastPid=null;ctx.pending=null;renderReply({text:INTRO});refresh();toast('Datos de muestra restaurados')}
   else if(a==='pdf')pdfAct(x);
+  else if(a==='pedido'){if(x)sheetPedido(x);else sheetPickProv()}
+  else if(a==='ped')sheetPed(x);
+  else if(a==='pedgo')pedCrear();
+  else if(a==='pedrec')sheetRecibir(x);
+  else if(a==='pedrep'){const o=pedInit().find(k=>k.num===x);pedD={prov:o.prov,q:{},nota:o.nota||''};const hb=habOf(prv(o.prov));o.items.forEach(i=>{if(prod(i.pid)){if(!hb.includes(i.pid))hb.push(i.pid);pedD.q[i.pid]=i.c}});save();sheetPedido(o.prov,true)}
+  else if(a==='habdel'){const hb=habOf(prv(pedD.prov)),k=hb.indexOf(+x);if(k>=0)hb.splice(k,1);delete pedD.q[+x];pedD.nota=$('#pedNota').value;save();sheetPedido(pedD.prov,true);toast('Quitado de los habituales')}
+  else if(a==='habadd'){const hb=habOf(prv(pedD.prov));if(!hb.includes(+x))hb.push(+x);pedD.q[+x]=sugQty(prod(+x))||1;pedD.nota=$('#pedNota').value;save();sheetPedido(pedD.prov,true)}
+  else if(a==='provnew'){if(isJefe())openSheet('<h3>Nuevo proveedor</h3><form data-form="provnew"><div class="fg"><label class="w">Nombre<input name="nombre" required></label><label>Contacto<input name="contacto"></label><label>Celular o teléfono<input name="tel" type="tel"></label></div><div class="sacts"><button class="btn" type="submit">Guardar</button></div></form>')}
+  else if(a==='cxpnew'){if(isJefe()){const d=new Date(Date.now()+30*864e5);openSheet(`<h3>Factura de proveedor</h3><form data-form="cxpnew"><div class="fg"><label class="w">Proveedor<select name="prov">${S.provs.map(p=>`<option value="${p.id}">${esc(p.nombre)}</option>`).join('')}</select></label><label>N.º de factura<input name="ref" required></label><label>Valor<input name="valor" type="number" inputmode="numeric" min="1" required></label><label class="w">Fecha de vencimiento<input name="vence" type="date" required value="${dayKey(d)}"></label></div><div class="sacts"><button class="btn" type="submit">Guardar</button></div></form>`)}}
   else if(a==='logodel'){if(!isJefe())return;S.emp=Object.assign(emp(),{logo:null,lw:0,lh:0});save();renderView()}
   else if(a==='pdfdemo'){const v=S.ventas[S.ventas.length-1];if(v)sheetFact(v.num)}
   else if(a==='cienew'){const q=$('#cieQ').value.trim(), f=b.closest('form'), num=!/[a-zñ]/i.test(q)&&q.replace(/\D/g,'').length>=5;
@@ -974,13 +1054,21 @@ document.addEventListener('submit',e=>{const f=e.target.closest('[data-form]');i
     const r=cerrar(f.dataset.k,{cid:f.dataset.cid?+f.dataset.cid:null,final:!!f.dataset.final,nombre:d.nombre.trim(),tdoc:d.tdoc,doc:d.doc.trim(),tel:d.tel.trim(),dir:d.dir.trim(),entrega:d.entrega,dirEnt:d.dirEnt.trim(),nota:d.nota.trim()});
     closeSheet();if(view!=='inicio')go('inicio');renderReply(r);refresh();speak(r.text);if(r.factura)sheetFact(r.factura);else if(r.cot)sheetCot(r.cot);return}
   if(k==='emp'){if(!isJefe())return;S.emp=Object.assign(emp(),{nombre:d.nombre.trim(),nit:d.nit.trim(),tel:d.tel.trim(),dir:d.dir.trim(),pie:d.pie.trim()});save();renderView();toast('Datos de la ferretería guardados');return}
-  if(k==='prod'){const o={nombre:d.nombre.trim(),alias:d.alias.trim(),unidad:d.unidad.trim().toLowerCase(),cat:d.cat.trim(),precio:+d.precio,costo:+d.costo,stock:+d.stock,min:+d.min,prov:+d.prov};
+  if(k==='recibir'){const o=pedInit().find(x=>x.num===f.dataset.num);o.items.forEach((i,n)=>{const q=Math.max(0,parseInt(d['q'+n],10)||0),p=prod(i.pid);i.r=q;if(p)p.stock+=q});o.estado='Recibido';o.recibido=new Date().toISOString();
+    if(isJefe()&&+d.valor>0)S.cxp.push({id:S.seq.id++,prov:o.prov,ref:(d.ref||'').trim()||o.num,fecha:o.recibido,vence:new Date(Date.now()+(+d.plazo||0)*864e5).toISOString(),valor:+d.valor,pagado:0});
+    save();refresh();sheetPed(o.num);toast('Pedido recibido: inventario actualizado');return}
+  if(k==='provnew'){if(!isJefe())return;S.provs.push({id:S.seq.id++,nombre:d.nombre.trim(),contacto:d.contacto.trim(),tel:d.tel.trim(),hab:[]});toast('Proveedor guardado')}
+  else if(k==='cxpnew'){if(!isJefe())return;S.cxp.push({id:S.seq.id++,prov:+d.prov,ref:d.ref.trim(),fecha:new Date().toISOString(),vence:new Date(d.vence+'T12:00:00').toISOString(),valor:+d.valor,pagado:0});toast('Factura registrada')}
+  else if(k==='prod'){const o={nombre:d.nombre.trim(),alias:d.alias.trim(),unidad:d.unidad.trim().toLowerCase(),cat:d.cat.trim(),precio:+d.precio,costo:+d.costo,stock:+d.stock,min:+d.min,prov:+d.prov};
     if(f.dataset.id==='new')S.prods.push(Object.assign({id:S.seq.id++},o));else Object.assign(prod(+f.dataset.id),o);toast('Producto guardado')}
   else if(k==='cli'){S.clientes.push({id:S.seq.id++,nombre:d.nombre.trim(),nota:d.nota.trim(),tel:d.tel.trim(),tdoc:'CC',doc:d.doc.trim(),dir:d.dir.trim(),cupo:+d.cupo,saldo:0,mov:[]});toast('Cliente guardado')}
   else if(k==='abono'){const v=doAbono(+f.dataset.id,+d.v,d.ref);toast('Abono de '+fmt(v)+' registrado')}
   else if(k==='pago'){const v=doPagoProv(+f.dataset.id,+d.v);toast('Pago de '+fmt(v)+' registrado')}
   save();closeSheet();refresh()});
-document.addEventListener('input',e=>{if(e.target.id==='cieQ'){cieSearch();return}
+document.addEventListener('input',e=>{if(e.target.id==='pedQ'){pedSearch();return}
+  if(e.target.id==='ppQ'){$('#ppList').innerHTML=pickRows(e.target.value);return}
+  if(e.target.classList.contains('pq')){pedD.q[+e.target.dataset.pid]=Math.max(0,parseInt(e.target.value,10)||0);pedCount();return}
+  if(e.target.id==='cieQ'){cieSearch();return}
   if(e.target.id==='cliQ'){cliQ=e.target.value;$('#cliList').innerHTML=cliRows();return}
   if(e.target.id==='invQ'){invQ=e.target.value;$('#invList').innerHTML=invRows()}});
 document.addEventListener('change',e=>{
