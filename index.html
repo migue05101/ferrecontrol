@@ -724,12 +724,20 @@ function vVentas(){const j=isJefe(), h=ventasDe(1,j?null:S.user), fs=S.ventas.fi
   <div class="sect">Lista actual</div>${listaHTML()}
   <div class="sect">Cotizaciones</div>${S.cots.length?`<div class="card list">${S.cots.slice().reverse().map(c=>`<button class="rowi" data-act="cot:${c.num}"><span class="nm">${c.num} · ${esc(c.cliente)}</span><span class="sb">${fdate(c.fecha)} · ${c.items.length} ${c.items.length===1?'producto':'productos'}</span><span class="r"><b>${fmt(c.total)}</b><span class="pill ${c.estado==='Vendida'?'':'neu'}">${c.estado}</span></span></button>`).join('')}</div>`:'<div class="card empty">Aún no hay cotizaciones.</div>'}
   <div class="sect">${j?'Facturas':'Tus facturas'}</div><div class="card list">${fs.length?fs.slice().reverse().slice(0,40).map(v=>`<button class="rowi" data-act="fact:${v.num}"><span class="nm">${v.num} · ${esc(v.cli?v.cli.nombre:v.cid?cli(v.cid).nombre:'Mostrador')}</span><span class="sb">${fdate(v.fecha)}, ${ftime(v.fecha)}${j&&usr(v.vend)?' · '+esc(usr(v.vend).nombre):''}</span><span class="r"><b>${fmt(v.total)}</b><span class="pill ${v.credito?'low':'neu'}">${v.credito?'Crédito':'Contado'}</span></span></button>`).join(''):'<div class="empty">Aún no tienes facturas.</div>'}</div>`}
+function vendido7(pid){const lim=Date.now()-7*864e5;let n=0;S.ventas.forEach(v=>{if(new Date(v.fecha)>=lim)v.items.forEach(i=>{if(i.pid===pid)n+=i.c})});return n}
+function minSug(p,dias){const s=vendido7(p.id);return s?Math.max(1,Math.ceil(s/7*dias)):null}
+function sheetMin(dias){if(!isJefe())return;const rows=S.prods.map(p=>({p,s:vendido7(p.id),m:minSug(p,dias)})).filter(r=>r.m!=null).sort((a,b)=>Math.abs(b.m-b.p.min)/(b.p.min||1)-Math.abs(a.m-a.p.min)/(a.p.min||1));
+  openSheet(`<h3>Proyectar mínimos</h3><p class="note" style="margin:-4px 0 10px">El mínimo sugerido es lo que se vende en los días que tarda en llegar un pedido, según las ventas de los últimos 7 días.</p>
+  <div class="cats">${[3,7,15,30].map(d=>`<button data-act="minimos:${d}" class="${d===dias?'on':''}">Cubrir ${d} días</button>`).join('')}</div>
+  <div class="card list">${rows.length?rows.map(r=>`<div class="rowi"><span class="nm">${esc(r.p.nombre)}</span><span class="sb">Vende ${(r.s/7).toLocaleString('es-CO',{maximumFractionDigits:1})} por día · hay ${r.p.stock.toLocaleString('es-CO')}</span><span class="r"><b>${r.p.min} → ${r.m}</b>${r.m===r.p.min?'<span class="pill neu">Igual</span>':`<button class="btn sec sm" data-act="minuse:${r.p.id}:${r.m}" style="margin-top:3px">Usar ${r.m}</button>`}</span></div>`).join(''):'<div class="empty">Aún no hay ventas para proyectar.</div>'}</div>
+  <div class="sacts"><button class="btn" data-act="minall:${dias}">Aplicar los ${rows.length} sugeridos</button><button class="btn sec" data-act="close">Cerrar</button></div>
+  <p class="note">Los productos sin ventas en la semana conservan su mínimo. Con más historial la proyección mejora.</p>`)}
 function invRows(){const q=norm(invQ);
   const l=S.prods.filter(p=>(invCat==='Todos'||(invCat==='Bajo mínimo'?p.stock<=p.min:p.cat===invCat))&&(!q||norm(p.nombre+' '+p.alias).includes(q)));
   return l.length?l.map(p=>{const cls=p.stock<=0?'out':p.stock<=p.min?'low':'';return`<button class="rowi" data-act="prod:${p.id}"><span class="nm">${esc(p.nombre)}</span><span class="sb">${esc(p.cat)}${isJefe()?' · costo '+fmt(p.costo):''} · mín. ${p.min}</span><span class="r"><b>${fmt(p.precio)}</b><span class="pill ${cls}">${p.stock.toLocaleString('es-CO')} ${esc(plural(p.unidad,p.stock))}</span></span></button>`}).join(''):'<div class="empty">Sin resultados.</div>'}
 function vInv(){const cats=['Todos','Bajo mínimo',...new Set(S.prods.map(p=>p.cat))];
   const val=S.prods.reduce((a,p)=>a+p.stock*p.costo,0), low=lowStock().length;
-  return head('Inventario','',isJefe()?'<button class="btn sm" data-act="prod:new">+ Producto</button>':'')+
+  return head('Inventario','',isJefe()?'<button class="btn sec sm" data-act="minimos:7">Mínimos</button><button class="btn sm" data-act="prod:new">+ Producto</button>':'')+
   `<div class="kpis">${isJefe()?kpi('Valor a costo',fmt(val))+kpi('Valor a precio de venta',fmt(S.prods.reduce((a,p)=>a+p.stock*p.precio,0))):''}${kpi('Bajo mínimo',low,low?'Hay que pedir':'Todo bien',low?'warn':'good')}${kpi('Productos',S.prods.length)}</div>
   <input class="search" id="invQ" placeholder="Buscar producto…" value="${esc(invQ)}" aria-label="Buscar producto">
   <div class="cats">${cats.map(c=>`<button data-cat="${esc(c)}" class="${c===invCat?'on':''}">${esc(c)}</button>`).join('')}</div>
@@ -786,7 +794,8 @@ function vCfg(){const vs=[['buttery','Voz 1'],['airy','Voz 2'],['glassy','Voz 3'
   <label>NIT<input name="nit" value="${esc(e.nit)}" placeholder="900.000.000-0"></label><label>Teléfono<input name="tel" type="tel" value="${esc(e.tel)}"></label>
   <label class="w">Dirección y ciudad<input name="dir" value="${esc(e.dir)}"></label>
   <label class="w">Texto al pie de la factura<input name="pie" value="${esc(e.pie)}" placeholder="Ej.: Gracias por su compra. Cambios dentro de los 5 días con factura."></label></div>
-  <div class="sacts"><button class="btn" type="submit">Guardar datos</button><button class="btn sec" type="button" data-act="pdfdemo">Ver factura de ejemplo</button></div></form>`})():'<p class="note">El nombre, el logo y los datos de la factura los cambia el administrador.</p>'}
+  <div class="sacts"><button class="btn" type="submit">Guardar datos</button><button class="btn sec" type="button" data-act="pdfdemo">Ver factura de ejemplo</button></div></form>`})():`<div class="sect">Ferretería y factura</div><div class="card" style="padding:14px"><p>El nombre, el logo y los datos de la factura solo los cambia el administrador. Ahora estás como <b>${esc(me().nombre)}</b> (vendedor).</p><div class="sacts"><button class="btn" data-act="setuser:1">Entrar como administrador</button></div></div>`}
+  <div class="card list" style="margin-top:14px"><div class="set"><div>Versión de la app<small>20-11-2026 20:00</small></div><button class="btn sec sm" data-act="reload">Actualizar</button></div></div>
   <p class="note">Prototipo: los productos, clientes, proveedores y cifras son inventados, y los cambios se guardan solo en este navegador.</p>`}
 
 /* ---------- hojas ---------- */
@@ -812,7 +821,7 @@ function sheetProdEdit(id){const n=id==='new', p=n?{nombre:'',alias:'',unidad:'u
   <label class="w">Otros nombres con que lo piden<input name="alias" value="${esc(p.alias)}"></label>
   <label>Unidad<input name="unidad" required value="${esc(p.unidad)}"></label><label>Categoría<input name="cat" required value="${esc(p.cat)}"></label>
   <label>Precio de venta<input name="precio" type="number" inputmode="numeric" min="0" required value="${p.precio}"></label><label>Costo<input name="costo" type="number" inputmode="numeric" min="0" required value="${p.costo}"></label>
-  <label>Existencias<input name="stock" type="number" inputmode="numeric" min="0" required value="${p.stock}"></label><label>Mínimo<input name="min" type="number" inputmode="numeric" min="0" required value="${p.min}"></label>
+  <label>Existencias<input name="stock" type="number" inputmode="numeric" min="0" required value="${p.stock}"></label><label>Mínimo (avisa al llegar aquí)<input name="min" type="number" inputmode="numeric" min="0" required value="${p.min}"></label>${!n&&minSug(p,7)!=null?`<p class="note w" style="margin:0">Vende unas ${(vendido7(p.id)/7).toLocaleString('es-CO',{maximumFractionDigits:1})} por día. Mínimo sugerido para cubrir 7 días: <b>${minSug(p,7)}</b>. <button type="button" class="btn sec sm" data-act="minuse:${p.id}:${minSug(p,7)}">Usar</button></p>`:''}
   <label class="w">Proveedor<select name="prov">${S.provs.map(v=>`<option value="${v.id}" ${v.id===p.prov?'selected':''}>${esc(v.nombre)}</option>`).join('')}</select></label></div>
   <div class="sacts"><button class="btn" type="submit">Guardar</button></div></form>${n?'':`<div class="sect">Vender</div><div class="radd"><span>Cantidad</span><div class="qty big"><button type="button" data-rq="-1" data-for="sQty" aria-label="Menos">−</button><input id="sQty" type="number" inputmode="numeric" min="1" value="1" aria-label="Cantidad"><button type="button" data-rq="1" data-for="sQty" aria-label="Más">+</button></div><button class="btn dk" type="button" data-act="addq:${p.id}:sQty">Agregar a la lista</button></div>`}`)}
 function sheetCli(id){if(id==='new'){openSheet(`<h3>Nuevo cliente</h3><form data-form="cli"><div class="fg"><label class="w">Nombre<input name="nombre" required></label><label>Cédula o NIT<input name="doc" required></label><label>Celular<input name="tel" type="tel" required></label><label class="w">Dirección<input name="dir"></label><label>Cupo de crédito<input name="cupo" type="number" inputmode="numeric" min="0" required value="500000"></label><label class="w">Nota<input name="nota"></label></div><div class="sacts"><button class="btn" type="submit">Guardar</button></div></form>`);return}
@@ -1014,7 +1023,7 @@ document.addEventListener('click',e=>{
   else if(a==='go'){closeSheet();go(x)}
   else if(a==='menu')sheetMenu();
   else if(a==='alerts')sheetAlerts();
-  else if(a==='store'){const e=emp();openSheet(`<h3>${esc(e.nombre)}</h3>${e.logo?`<img src="${e.logo}" alt="" style="max-height:70px;max-width:160px;display:block;margin-bottom:8px">`:''}<p>${[e.nit?'NIT '+esc(e.nit):'',esc(e.dir),e.tel?'Tel. '+esc(e.tel):''].filter(Boolean).join('<br>')||'Aún no se han cargado los datos de la ferretería.'}</p>${isJefe()?'<div class="sacts"><button class="btn sec" data-act="go:configuracion">Editar en Configuración</button></div>':'<p class="note">Estos datos los cambia el administrador.</p>'}`)}
+  else if(a==='store'){const e=emp();openSheet(`<h3>${esc(e.nombre)}</h3>${e.logo?`<img src="${e.logo}" alt="" style="max-height:70px;max-width:160px;display:block;margin-bottom:8px">`:''}<p>${[e.nit?'NIT '+esc(e.nit):'',esc(e.dir),e.tel?'Tel. '+esc(e.tel):''].filter(Boolean).join('<br>')||'Aún no se han cargado los datos de la ferretería.'}</p>${isJefe()?'<div class="sacts"><button class="btn" data-act="go:configuracion">Cambiar nombre y logo</button></div>':'<p class="note">Estos datos los cambia el administrador.</p><div class="sacts"><button class="btn sec" data-act="user">Cambiar de usuario</button></div>'}`)}
   else if(a==='user')sheetUser();
   else if(a==='setuser'){S.user=+x;save();ctx.pending=null;closeSheet();renderReply({text:INTRO});refresh();toast('Sesión: '+me().nombre)}
   else if(a==='type')openType();
@@ -1022,6 +1031,10 @@ document.addEventListener('click',e=>{
   else if(a==='reset'){if(Date.now()-resetArm>3000){resetArm=Date.now();toast('Toca otra vez para borrar los cambios');return}
     resetArm=0;{const e=S.emp;S=seed();if(e)S.emp=e}save();ctx.lastPid=null;ctx.pending=null;renderReply({text:INTRO});refresh();toast('Datos de muestra restaurados')}
   else if(a==='pdf')pdfAct(x);
+  else if(a==='reload'){try{location.replace(location.pathname+'?v='+Date.now()+'#configuracion')}catch(e){location.reload()}}
+  else if(a==='minimos')sheetMin(+x||7);
+  else if(a==='minuse'){const p=prod(+x);p.min=+y;save();closeSheet();refresh();toast('Mínimo actualizado')}
+  else if(a==='minall'){if(!isJefe())return;let n=0;S.prods.forEach(p=>{const s=minSug(p,+x);if(s!=null&&s!==p.min){p.min=s;n++}});save();closeSheet();refresh();toast(n+' mínimos actualizados')}
   else if(a==='pedido'){if(x)sheetPedido(x);else sheetPickProv()}
   else if(a==='ped')sheetPed(x);
   else if(a==='pedgo')pedCrear();
