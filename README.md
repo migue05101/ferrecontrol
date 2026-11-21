@@ -1,11 +1,15 @@
 # FerreControl
 
-Prototipo del cerebro por voz para una ferretería: inventario, ventas, cotizaciones, clientes (fiados), compras, proveedores, reportes por usuario y finanzas.
+Gestión de ferretería con asistente por voz: inventario, ventas, caja, cotizaciones, clientes (fiados), pedidos a proveedores, reportes por perfil y finanzas.
 
-- Todo está en `index.html`; no necesita compilación.
-- Los datos son de muestra y se guardan en el navegador (localStorage).
-- La voz usa el reconocimiento del navegador, que exige HTTPS y permiso de micrófono (Chrome en computador o Android; Safari en iPhone).
+## Estructura
+- `public/` — la aplicación (un solo `index.html`, íconos y la librería de PDF).
+- `netlify/functions/api.mts` — servidor: registro con código de invitación, ingreso (ferretería + usuario + contraseña) y datos separados por ferretería.
+- `netlify/database/migrations/` — tablas de la base de datos (Netlify Database).
 
-## Publicar en Netlify
-1. En Netlify: Add new site → Import an existing project → GitHub → este repositorio.
-2. Deja vacío el comando de build; la carpeta de publicación es `.` (ya está en `netlify.toml`).
+## Variables de entorno en Netlify
+- `TOKEN_SECRET` — firma de las sesiones.
+- `ADMIN_KEY` — clave maestra del proveedor para generar códigos de invitación (panel en `/#proveedor`).
+
+## Perfiles
+Administrador, Vendedor, Bodega y Caja.
