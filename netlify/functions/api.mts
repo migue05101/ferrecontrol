@@ -23,6 +23,22 @@ const db = () => {
 const q = async (text: string, params: any[] = []) => (await db().pool.query(text, params)).rows;
 
 const ROLES = ["admin", "vendedor", "bodega", "cajero"];
+// Límites de cada plan. null = sin límite.
+const PLANES: any = {
+  basico: { nombre: "Básico", usuarios: 2, productos: 300 },
+  estandar: { nombre: "Estándar", usuarios: 5, productos: 2000 },
+  pro: { nombre: "Pro", usuarios: null, productos: null },
+};
+const DIAS_PRUEBA = 30;
+const planDe = (f: any) => {
+  const p = PLANES[f.plan] || PLANES.estandar;
+  const ms = f.vence ? new Date(f.vence).getTime() - Date.now() : null;
+  return {
+    plan: PLANES[f.plan] ? f.plan : "estandar", nombre: p.nombre, usuarios: p.usuarios, productos: p.productos,
+    vence: f.vence, dias: ms == null ? null : Math.ceil(ms / 864e5),
+    estado: f.suspendida ? "suspendida" : ms != null && ms < 0 ? "vencida" : "activa",
+  };
+};
 const DIA = 864e5;
 
 const json = (data: any, status = 200) =>
@@ -77,7 +93,7 @@ async function sesion(req: Request) {
   const p = leerToken(req);
   if (!p) return null;
   const r = await q(
-    "SELECT u.id,u.usuario,u.nombre,u.rol,u.ferreteria,f.nombre AS fnombre FROM usuarios u JOIN ferreterias f ON f.slug=u.ferreteria WHERE u.id=$1 AND u.ferreteria=$2",
+    "SELECT u.id,u.usuario,u.nombre,u.rol,u.ferreteria,f.nombre AS fnombre,f.plan,f.vence,f.suspendida FROM usuarios u JOIN ferreterias f ON f.slug=u.ferreteria WHERE u.id=$1 AND u.ferreteria=$2",
     [p.u, p.f],
   );
   return r[0] || null;
@@ -87,6 +103,7 @@ const respSesion = (u: any) => ({
   token: firmar({ f: u.ferreteria, u: u.id, exp: Date.now() + 30 * DIA }),
   ferreteria: { slug: u.ferreteria, nombre: u.fnombre },
   usuario: pubUsuario(u),
+  plan: planDe(u),
 });
 const usuariosDe = async (f: string) => (await q("SELECT id,usuario,nombre,rol FROM usuarios WHERE ferreteria=$1 ORDER BY id", [f])).map(pubUsuario);
 const estadoVacio = (nombre: string) => ({
@@ -126,11 +143,29 @@ export default async (req: Request) => {
         const cod = "FC-" + [...r].map((x, i) => A[x % A.length] + (i === 3 ? "-" : "")).join("");
         await q("INSERT INTO invitaciones (codigo) VALUES ($1)", [cod]);
       }
-      const ferreterias = await q(
-        "SELECT f.slug,f.nombre,f.creado,(SELECT count(*)::int FROM usuarios u WHERE u.ferreteria=f.slug) AS usuarios FROM ferreterias f ORDER BY f.creado DESC",
-      );
+      const slug = slugDe(b.slug);
+      if (b.accion === "plan" && PLANES[b.plan]) await q("UPDATE ferreterias SET plan=$1 WHERE slug=$2", [b.plan, slug]);
+      if (b.accion === "dias") {
+        const d = Math.max(1, Math.min(3650, Math.round(Number(b.dias) || 0)));
+        await q("UPDATE ferreterias SET vence=GREATEST(COALESCE(vence,now()),now()) + make_interval(days => $1) WHERE slug=$2", [d, slug]);
+      }
+      if (b.accion === "suspender") await q("UPDATE ferreterias SET suspendida=$1 WHERE slug=$2", [!!b.valor, slug]);
+      if (b.accion === "respaldos") {
+        const respaldos = await q("SELECT id,creado,ver,jsonb_array_length(COALESCE(datos->'prods','[]'::jsonb)) AS productos,jsonb_array_length(COALESCE(datos->'ventas','[]'::jsonb)) AS ventas FROM respaldos WHERE ferreteria=$1 ORDER BY creado DESC", [slug]);
+        return json({ respaldos });
+      }
+      if (b.accion === "restaurar") {
+        const r = (await q("SELECT id FROM respaldos WHERE id=$1 AND ferreteria=$2", [Number(b.id), slug]))[0];
+        if (!r) return err(404, "Esa copia no existe.");
+        // Antes de restaurar se guarda una copia del estado actual, para poder deshacer.
+        await q("INSERT INTO respaldos (ferreteria,ver,datos) SELECT ferreteria,ver,datos FROM estados WHERE ferreteria=$1", [slug]);
+        await q("UPDATE estados SET datos=(SELECT datos FROM respaldos WHERE id=$1), ver=ver+1, actualizado=now() WHERE ferreteria=$2", [r.id, slug]);
+      }
+      const ferreterias = (await q(
+        "SELECT f.slug,f.nombre,f.creado,f.plan,f.vence,f.suspendida,e.actualizado,(SELECT count(*)::int FROM usuarios u WHERE u.ferreteria=f.slug) AS usuarios,jsonb_array_length(COALESCE(e.datos->'prods','[]'::jsonb)) AS productos,jsonb_array_length(COALESCE(e.datos->'ventas','[]'::jsonb)) AS ventas FROM ferreterias f LEFT JOIN estados e ON e.ferreteria=f.slug ORDER BY f.creado DESC",
+      )).map((f: any) => ({ ...f, info: planDe(f) }));
       const invitaciones = await q("SELECT codigo,creado,usado_por,usado FROM invitaciones ORDER BY creado DESC LIMIT 200");
-      return json({ ferreterias, invitaciones });
+      return json({ ferreterias, invitaciones, planes: PLANES });
     }
 
     // ---------- registro de una ferretería con código de invitación ----------
@@ -154,7 +189,7 @@ export default async (req: Request) => {
           return err(409, "Ya hay una ferretería inscrita con ese nombre. Agrégale la ciudad o el barrio.");
         }
         const sal = randomBytes(16).toString("hex");
-        await c.query("INSERT INTO ferreterias (slug,nombre) VALUES ($1,$2)", [slug, nombreF]);
+        const fr = (await c.query("INSERT INTO ferreterias (slug,nombre,plan,vence) VALUES ($1,$2,'estandar',now() + make_interval(days => $3)) RETURNING plan,vence,suspendida", [slug, nombreF, DIAS_PRUEBA])).rows[0];
         const u = (await c.query(
           "INSERT INTO usuarios (ferreteria,usuario,nombre,rol,sal,hash) VALUES ($1,$2,$3,'admin',$4,$5) RETURNING id,usuario,nombre,rol,ferreteria",
           [slug, usuario, nombre, sal, hashClave(b.clave, sal)],
@@ -162,7 +197,7 @@ export default async (req: Request) => {
         await c.query("INSERT INTO estados (ferreteria,datos) VALUES ($1,$2::jsonb)", [slug, JSON.stringify(estadoVacio(nombreF))]);
         await c.query("UPDATE invitaciones SET usado_por=$1, usado=now() WHERE codigo=$2", [slug, codigo]);
         await c.query("COMMIT");
-        return json(respSesion({ ...u, fnombre: nombreF }), 201);
+        return json(respSesion({ ...u, ...fr, fnombre: nombreF }), 201);
       } catch (e) {
         await c.query("ROLLBACK").catch(() => {});
         throw e;
@@ -180,7 +215,7 @@ export default async (req: Request) => {
       };
       if (!slug || !usuario || typeof b.clave !== "string") return mal();
       const u = (await q(
-        "SELECT u.*,f.nombre AS fnombre FROM usuarios u JOIN ferreterias f ON f.slug=u.ferreteria WHERE u.ferreteria=$1 AND u.usuario=$2",
+        "SELECT u.*,f.nombre AS fnombre,f.plan,f.vence,f.suspendida FROM usuarios u JOIN ferreterias f ON f.slug=u.ferreteria WHERE u.ferreteria=$1 AND u.usuario=$2",
         [slug, usuario],
       ))[0];
       if (!u) return mal();
@@ -194,18 +229,20 @@ export default async (req: Request) => {
         return mal();
       }
       await q("UPDATE usuarios SET fallos=0, bloqueado_hasta=NULL WHERE id=$1", [u.id]);
+      if (u.suspendida) return err(403, "Esta cuenta está suspendida. Comunícate con FerreControl.");
       return json(respSesion(u));
     }
 
     // ---------- de aquí en adelante hay que estar dentro de una ferretería ----------
     const yo = await sesion(req);
     if (!yo) return err(401, "Sesión vencida. Vuelve a ingresar.", { sesion: false });
-    const F = yo.ferreteria;
+    const F = yo.ferreteria, P = planDe(yo);
+    if (P.estado === "suspendida") return err(403, "Esta cuenta está suspendida. Comunícate con FerreControl.", { plan: P });
 
     if (ruta === "estado" && m === "GET") {
       const e = (await q("SELECT ver,datos FROM estados WHERE ferreteria=$1", [F]))[0];
       if (!e) return err(404, "No se encontraron los datos de la ferretería.");
-      return json({ ver: e.ver, estado: e.datos, usuarios: await usuariosDe(F), usuario: pubUsuario(yo), ferreteria: { slug: F, nombre: yo.fnombre } });
+      return json({ ver: e.ver, estado: e.datos, usuarios: await usuariosDe(F), usuario: pubUsuario(yo), ferreteria: { slug: F, nombre: yo.fnombre }, plan: P });
     }
     if (ruta === "estado" && m === "PUT") {
       const b = await cuerpo(req);
@@ -213,6 +250,17 @@ export default async (req: Request) => {
       const s = b.estado;
       if (!s || typeof s !== "object" || !Array.isArray(s.prods) || !Array.isArray(s.ventas)) return err(400, "Datos incompletos.");
       delete s.users; delete s.user; delete s.lista;
+      if (P.estado !== "activa") return err(402, "La membresía está vencida.", { plan: P });
+      if (P.productos != null && s.prods.length > P.productos) {
+        const n = (await q("SELECT jsonb_array_length(COALESCE(datos->'prods','[]'::jsonb)) AS n FROM estados WHERE ferreteria=$1", [F]))[0]?.n ?? 0;
+        if (s.prods.length > n) return err(403, `El plan ${P.nombre} permite hasta ${P.productos} productos.`, { limite: "productos", plan: P });
+      }
+      // Copia diaria automática del estado anterior; se conservan las últimas 30.
+      const ult = (await q("SELECT creado FROM respaldos WHERE ferreteria=$1 ORDER BY creado DESC LIMIT 1", [F]))[0];
+      if (!ult || Date.now() - new Date(ult.creado).getTime() > DIA) {
+        await q("INSERT INTO respaldos (ferreteria,ver,datos) SELECT ferreteria,ver,datos FROM estados WHERE ferreteria=$1", [F]);
+        await q("DELETE FROM respaldos WHERE ferreteria=$1 AND id NOT IN (SELECT id FROM respaldos WHERE ferreteria=$1 ORDER BY creado DESC LIMIT 30)", [F]);
+      }
       // Solo el administrador cambia los datos de la ferretería (nombre, logo, NIT).
       const sql = yo.rol === "admin"
         ? "UPDATE estados SET datos=$1::jsonb, ver=ver+1, actualizado=now() WHERE ferreteria=$2 AND ver=$3 RETURNING ver"
@@ -262,6 +310,10 @@ export default async (req: Request) => {
         }
       } else {
         if (!validarClave(b.clave)) return err(400, "La contraseña debe tener al menos 6 caracteres.");
+        if (P.usuarios != null) {
+          const n = (await q("SELECT count(*)::int AS n FROM usuarios WHERE ferreteria=$1", [F]))[0].n;
+          if (n >= P.usuarios) return err(403, `El plan ${P.nombre} permite hasta ${P.usuarios} usuarios. Para agregar más, pide un plan superior.`);
+        }
         if ((await q("SELECT 1 FROM usuarios WHERE ferreteria=$1 AND usuario=$2", [F, usuario]))[0]) return err(409, "Ya existe ese usuario.");
         const sal = randomBytes(16).toString("hex");
         await q("INSERT INTO usuarios (ferreteria,usuario,nombre,rol,sal,hash) VALUES ($1,$2,$3,$4,$5,$6)", [F, usuario, nombre, rol, sal, hashClave(b.clave, sal)]);

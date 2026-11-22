@@ -104,6 +104,7 @@ input,select{font:inherit;color:inherit}
 .alinks{display:flex;justify-content:center;gap:22px;margin-top:16px;flex-wrap:wrap}
 .alinks button{color:var(--pur);font-weight:600;font-size:15px}
 .grid button.off{opacity:.38}
+.planbar{display:block;width:100%;margin-top:12px;padding:10px 14px;text-align:left;font-weight:600;font-size:14px;color:#A85F06;background:#FDEFD9;border-color:#F8DDB4}
 .sdot{position:absolute;right:-1px;bottom:-1px;width:11px;height:11px;border-radius:50%;border:2px solid #F3F2FB;background:var(--ok)}
 .sdot.w{background:var(--warn)}
 .codigo{font-family:ui-monospace,Menlo,monospace;font-weight:700;letter-spacing:.04em}
@@ -258,6 +259,7 @@ input,select{font:inherit;color:inherit}
     <form id="typeForm" hidden><input id="inp" autocomplete="off" placeholder="Escribe tu pregunta…" aria-label="Escribe tu pregunta"><button type="submit" aria-label="Enviar"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></form>
     <button id="listLine" data-act="go:ventas" hidden></button>
   </section>
+  <button class="card planbar" id="planBar" data-act="go:configuracion" hidden></button>
   <div class="grid" id="grid"></div>
 </div></div>
 <div class="page" id="view"><div class="col" id="viewCol"></div></div>
@@ -642,7 +644,7 @@ function alerts(){const a=[]; const low=lowStock(), ve=vencidas(), cu=S.clientes
   if(cu.length&&can('clientes'))a.push({t:`${cu.length} clientes cerca del cupo de crédito`,s:cu.map(c=>c.nombre).join(', '),go:'clientes'});
   return a}
 function dayTotals(n,vend){const out=[];for(let d=n-1;d>=0;d--){const x=new Date();x.setDate(x.getDate()-d);const k=dayKey(x);out.push({l:d===0?'Hoy':x.toLocaleDateString('es-CO',{weekday:'short'}).replace('.',''),v:S.ventas.filter(v=>dayKey(v.fecha)===k&&(!vend||v.vend===vend)).reduce((a,v)=>a+v.total,0)})}return out}
-function refreshHome(){pintarGrid();
+function refreshHome(){pintarGrid();{const pb=$('#planBar'),p=ses&&ses.plan,av=!!(p&&p.dias!=null&&p.dias<=7&&p.estado==='activa');pb.hidden=!av;if(av)pb.textContent=p.dias<=0?'Tu membresía vence hoy. Renuévala para no perder el acceso.':`Tu membresía vence en ${p.dias} ${p.dias===1?'día':'días'}. Renuévala a tiempo.`}
   $('#bellDot').hidden=!alerts().length;
   const ll=$('#listLine'); ll.hidden=!S.lista.length;
   ll.innerHTML=`Lista <span>${S.lista.length}</span><b class="num">${fmt(listaTotal())}</b><em>Ver ›</em>`}
@@ -866,7 +868,9 @@ function vCfg(){const vs=[['buttery','Voz 1'],['airy','Voz 2'],['glassy','Voz 3'
   ${tts?`<div class="set"><div>Voz del asistente</div><select id="voiceSel" aria-label="Voz del asistente">${vs.map(v=>`<option value="${v[0]}" ${cfg.voice===v[0]?'selected':''}>${v[1]}</option>`).join('')}</select></div>`:''}
   <div class="set"><div>Micrófono<small>${!capsReady?'Comprobando…':dict?'Disponible en este dispositivo.':'No disponible en este dispositivo: se escribe la pregunta.'}</small></div><span class="pill ${dict?'':'neu'}">${dict?'Activo':'Sin voz'}</span></div>
   ${ses?`<div class="set"><div>${esc(me().nombre)}<small>${ROLN[rol()]} · ${esc(ses.ferreteria.nombre)}</small></div><button class="btn sec sm" data-act="user">Mi cuenta</button></div>
-  <div class="set"><div>Sincronización<small id="syncTxt">${syncTxt()}</small></div><button class="btn sec sm" data-act="syncnow">Sincronizar</button></div>`
+  <div class="set"><div>Sincronización<small id="syncTxt">${syncTxt()}</small></div><button class="btn sec sm" data-act="syncnow">Sincronizar</button></div>
+  <div class="set"><div>Membresía<small>${esc(planTxt())}</small></div></div>
+  ${isJefe()?'<div class="set"><div>Copia de seguridad<small>Descarga todos los datos de la ferretería en un archivo. El servidor además guarda una copia diaria.</small></div><button class="btn sec sm" data-act="exportar">Descargar</button></div>':''}`
   :`<div class="set"><div>Usuario de demostración<small>${esc(me().nombre)} · ${ROLN[rol()]}</small></div><button class="btn sec sm" data-act="user">Cambiar</button></div>
   <div class="set"><div>Datos de muestra<small>Borra los cambios y vuelve al inventario inventado.</small></div><button class="btn sec sm" data-act="reset">Reiniciar</button></div>
   ${NUBE?'<div class="set"><div>Estás en la demostración<small>Nada de esto se guarda en una ferretería real.</small></div><button class="btn sm" data-act="demoout">Salir</button></div>':''}`}</div>
@@ -880,7 +884,7 @@ function vCfg(){const vs=[['buttery','Voz 1'],['airy','Voz 2'],['glassy','Voz 3'
   <label class="w">Dirección y ciudad<input name="dir" value="${esc(e.dir)}"></label>
   <label class="w">Texto al pie de la factura<input name="pie" value="${esc(e.pie)}" placeholder="Ej.: Gracias por su compra. Cambios dentro de los 5 días con factura."></label></div>
   <div class="sacts"><button class="btn" type="submit">Guardar datos</button><button class="btn sec" type="button" data-act="pdfdemo">Ver factura de ejemplo</button></div></form>`})():`<div class="sect">Ferretería y factura</div><div class="card" style="padding:14px"><p>El nombre, el logo y los datos de la factura solo los cambia el administrador. Ahora estás como <b>${esc(me().nombre)}</b> (${ROLN[rol()]}).</p>${ses?'':'<div class="sacts"><button class="btn" data-act="setuser:1">Entrar como administrador</button></div>'}</div>`}
-  <div class="card list" style="margin-top:14px"><div class="set"><div>Versión de la app<small>20-11-2026 20:50</small></div><button class="btn sec sm" data-act="reload">Actualizar</button></div></div>
+  <div class="card list" style="margin-top:14px"><div class="set"><div>Versión de la app<small>21-11-2026 19:16</small></div><button class="btn sec sm" data-act="reload">Actualizar</button></div></div>
   <p class="note">${ses?'Los datos de esta ferretería se guardan en el servidor y solo los ven sus usuarios.':'Demostración: los productos, clientes, proveedores y cifras son inventados, y los cambios se guardan solo en este navegador.'}</p>`}
 
 /* ---------- hojas ---------- */
@@ -893,7 +897,8 @@ function docHTML(tipo,d,cliente,extra){const base=d.total/(1+IVA);
   <table class="tbl" style="margin-top:6px">${d.items.map(i=>`<tr><td style="padding-left:0">${i.c} × ${esc(i.n)}<br><span style="color:var(--mut);font-size:12.5px">${fmt(i.p)} / ${esc(i.u)}</span></td><td style="padding-right:0">${fmt(i.c*i.p)}</td></tr>`).join('')}
   <tr><td style="padding-left:0">Subtotal sin IVA</td><td style="padding-right:0">${fmt(base)}</td></tr><tr><td style="padding-left:0">IVA 19 %</td><td style="padding-right:0">${fmt(d.total-base)}</td></tr><tr class="tot"><td style="padding-left:0">Total</td><td style="padding-right:0">${fmt(d.total)}</td></tr></table></div>`}
 const docText=(tipo,d,cliente)=>`${tipo} ${d.num} · ${emp().nombre}\nCliente: ${cliente}\n`+(d.entrega?(d.entrega.tipo==='domicilio'?`Entrega a domicilio: ${d.entrega.dir}\n`:'Recoge en la tienda\n'):'')+d.items.map(i=>`${i.c} x ${i.n}: ${fmt(i.c*i.p)}`).join('\n')+`\nTOTAL: ${fmt(d.total)} (IVA incluido)`;
-function sheetFact(num){const v=S.ventas.find(x=>x.num===num);if(!v)return;const c=v.cli?v.cli.nombre:v.cid?cli(v.cid).nombre:'Mostrador';
+function sheetFact(num){const v=S.ventas.find(x=>x.num===num);if(v)sheetFactV(v)}
+function sheetFactV(v){const num=v.num;const c=v.cli?v.cli.nombre:v.cid?cli(v.cid).nombre:'Mostrador';
   openSheet(docHTML('Factura',v,c,` · ${v.credito?'Crédito':'Contado'}`)+(v.credito?'':v.caja?`<p class="note" style="margin:8px 0 0">Pagada en caja: ${esc(v.caja.medio)} · ${esc((usr(v.caja.por)||{}).nombre||'')} · ${fdate(v.caja.f)}, ${ftime(v.caja.f)}</p>`:v.caja===null&&can('caja')?`<form data-form="cobro" data-num="${v.num}"><div class="fg" style="margin-top:10px"><label class="w">Recibir pago · medio<select name="medio"><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Nequi</option></select></label></div><div class="sacts"><button class="btn" type="submit">Recibir ${fmt(v.total)}</button></div></form>`:v.caja===null?'<p class="note" style="margin:8px 0 0">Pendiente de pago en caja.</p>':'')+PDFBTN);prepPDF('Factura',v)}
 function sheetCot(num){const c=S.cots.find(x=>x.num===num);if(!c)return;
   openSheet(docHTML('Cotización',c,c.cliente,` · ${c.estado}`)+PDFBTN+`<div class="sacts"><button class="btn sec" data-act="cot2lista:${num}">Pasar a la lista para vender</button></div>`);prepPDF('Cotización',c)}
@@ -1129,32 +1134,43 @@ async function push(){if(pushing||!ses)return;pushing=true;
       if(r.ok){ver=r.d.ver;base=env;dirty=J(fuera())!==J(env);lastSync=Date.now()}
       else if(r.status===409){const m=merge3(base,fuera(),r.d.estado);base=CL(r.d.estado);ver=r.d.ver;aplicar(m.state,r.d.usuarios);dirty=J(fuera())!==J(base);pintar()}
       else if(r.status===401){salir('La sesión venció. Vuelve a ingresar.');return}
-      else{if(r.d&&r.d.error)toast(r.d.error);break}}
+      else if(r.status===402){ses.plan=r.d.plan||ses.plan;guardarSes();bloquear();return}
+      else if(r.status===403&&r.d.plan&&r.d.plan.estado==='suspendida'){salir(r.d.error);return}
+      else{if(r.d&&r.d.error)toast(r.d.error);if(r.status===403){dirty=false;pushing=false;pull()}break}}
   }finally{pushing=false;if(ses){cachear();marca();if(dirty){clearTimeout(pushT);pushT=setTimeout(push,online?3000:8000)}}}}
 async function pull(){if(pushing||!ses)return;const v0=ver;let r;try{r=await api('estado')}catch(e){online=false;marca();return}
   if(!ses||pushing||v0!==ver)return;online=true;
   if(r.status===401){salir('La sesión venció o tu usuario fue retirado.');return}
+  if(r.status===403){salir(r.d.error||'Cuenta suspendida.');return}
   if(!r.ok)return;
-  const rolAntes=rol();ses.usuario=r.d.usuario;ses.ferreteria=r.d.ferreteria;guardarSes();
+  const rolAntes=rol(), eraVencida=vencida();ses.usuario=r.d.usuario;ses.ferreteria=r.d.ferreteria;ses.plan=r.d.plan||ses.plan;guardarSes();
+  if(vencida()){if(!eraVencida||!$('#auth').classList.contains('on'))bloquear();return}
+  if(eraVencida){iniciarApp()}
   if(r.d.ver!==ver){if(dirty){const m=merge3(base,fuera(),r.d.estado);aplicar(m.state,r.d.usuarios,r.d.usuario)}else aplicar(r.d.estado,r.d.usuarios,r.d.usuario);
     base=CL(r.d.estado);ver=r.d.ver;dirty=J(fuera())!==J(base);cachear();pintar();if(dirty)push()}
   else{S.users=r.d.usuarios;S.user=r.d.usuario.id;if(rol()!==rolAntes)pintar()}
   lastSync=Date.now();marca()}
 function iniciarApp(){$('#auth').classList.remove('on');ctx.lastPid=null;ctx.pending=null;renderReply({text:INTRO});$('#headline').textContent='Hola, ¿en qué puedo ayudarte con tu ferretería hoy?';$('#headline').classList.remove('heard');
   const hs=location.hash.slice(1);go(hs&&hs!=='proveedor'?hs:'inicio',true);marca()}
-async function entrar(d){ses={token:d.token,ferreteria:d.ferreteria,usuario:d.usuario};guardarSes();try{localStorage.setItem('ferro_ult',J({f:d.ferreteria.nombre,u:d.usuario.usuario}))}catch(e){}
+async function entrar(d){ses={token:d.token,ferreteria:d.ferreteria,usuario:d.usuario,plan:d.plan||null};guardarSes();try{localStorage.setItem('ferro_ult',J({f:d.ferreteria.nombre,u:d.usuario.usuario}))}catch(e){}
   S=null;saveHook=alGuardar;dirty=false;ver=0;base=null;online=true;
   let c=null;try{c=JSON.parse(localStorage.getItem(cacheKey())||'null')}catch(e){}
   let r=null;try{r=await api('estado')}catch(e){online=false}
   if(r&&r.status===401){salir('La sesión venció. Vuelve a ingresar.');return}
-  if(r&&r.ok){ses.usuario=r.d.usuario;ses.ferreteria=r.d.ferreteria;guardarSes();
+  if(r&&r.status===403){salir(r.d.error||'Cuenta suspendida.');return}
+  if(r&&r.ok){ses.usuario=r.d.usuario;ses.ferreteria=r.d.ferreteria;ses.plan=r.d.plan||ses.plan;guardarSes();
     if(c&&c.dirty&&c.base){S={lista:c.lista||[]};const m=merge3(c.base,c.mio,r.d.estado);aplicar(m.state,r.d.usuarios,r.d.usuario);base=CL(r.d.estado);ver=r.d.ver;dirty=J(fuera())!==J(base)}
     else{S={lista:(c&&c.lista)||[]};aplicar(r.d.estado,r.d.usuarios,r.d.usuario);base=CL(r.d.estado);ver=r.d.ver}
     lastSync=Date.now()}
   else if(c&&c.mio){S={lista:c.lista||[]};aplicar(c.mio,c.users||[ses.usuario]);base=c.base;ver=c.ver;dirty=!!c.dirty;online=false}
   else{ses=null;saveHook=null;renderAuth('login','No hay conexión con el servidor. Inténtalo de nuevo.');return}
-  cachear();iniciarApp();if(dirty)push();
-  clearInterval(pollT);pollT=setInterval(pull,12000)}
+  cachear();clearInterval(pollT);pollT=setInterval(pull,12000);
+  if(vencida()){bloquear();return}
+  iniciarApp();if(dirty)push()}
+const vencida=()=>!!(ses&&ses.plan&&ses.plan.estado==='vencida');
+function bloquear(){closeSheet();renderAuth('vencida')}
+function planTxt(){const p=ses&&ses.plan;if(!p)return'';const lim=[p.usuarios?`hasta ${p.usuarios} usuarios`:'usuarios ilimitados',p.productos?`${p.productos.toLocaleString('es-CO')} productos`:'productos ilimitados'].join(' y ');
+  return `Plan ${p.nombre} · ${p.dias==null?'sin fecha de vencimiento':p.dias<0?'vencido':p.dias===0?'vence hoy':`vence el ${fdate(p.vence)} (${p.dias} ${p.dias===1?'día':'días'})`} · ${lim}`}
 function salir(msg){clearInterval(pollT);clearTimeout(pushT);ses=null;saveHook=null;S=null;dirty=false;try{localStorage.removeItem(sesKey)}catch(e){}
   closeSheet();$('#home').classList.remove('on');$('#view').classList.remove('on');$('#auth').classList.add('on');renderAuth('login',typeof msg==='string'?msg:'');marca()}
 function iniciarDemo(){ses=null;saveHook=null;load();iniciarApp()}
@@ -1178,6 +1194,7 @@ function renderAuth(modo,msg){const b=$('#authBody');let u={};try{u=JSON.parse(l
     <label>Contraseña<input name="clave" type="password" required minlength="6" autocomplete="new-password"></label><label>Repítela<input name="clave2" type="password" required minlength="6" autocomplete="new-password"></label></div>
     <p class="note">Con el nombre de la ferretería, el usuario y la contraseña vas a entrar siempre. Guárdalos.</p><p class="aerr" id="authErr"></p>
     <div class="sacts"><button class="btn" type="submit" style="flex:1">Inscribir</button></div></form><div class="alinks"><button data-act="auth:login">Ya tengo cuenta</button></div>`;
+  else if(modo==='vencida')b.innerHTML=`<div class="card" style="padding:18px;text-align:center"><h3 style="font-size:20px;margin-bottom:8px">Membresía vencida</h3><p>La membresía de <b>${esc(ses.ferreteria.nombre)}</b> venció${ses.plan&&ses.plan.vence?' el '+fdate(ses.plan.vence):''}.</p><p style="margin-top:8px">Tus datos están guardados y vuelven a estar disponibles en cuanto se renueve. Comunícate con FerreControl para reactivarla.</p><div class="sacts" style="justify-content:center"><button class="btn" data-act="syncnow">Ya renové: comprobar</button><button class="btn sec" data-act="logout">Cerrar sesión</button></div></div>`;
   else if(modo==='proveedor')b.innerHTML=`<form class="card" data-form="maestro" style="padding:16px"><h3 style="font-size:20px;margin-bottom:10px">Panel del proveedor</h3><div class="fg"><label class="w">Clave maestra<input name="clave" type="password" required autocomplete="off"></label></div><p class="aerr" id="authErr"></p><div class="sacts"><button class="btn" type="submit" style="flex:1">Entrar</button></div></form><div id="mkPanel"></div><div class="alinks"><button data-act="auth:login">Volver al ingreso</button></div>`;
   else b.innerHTML=`<form class="card" data-form="login" style="padding:16px"><h3 style="font-size:20px;margin-bottom:10px">Ingresar</h3><div class="fg">
     <label class="w">Ferretería<input name="ferreteria" required autocomplete="organization" value="${esc(u.f||'')}"></label>
@@ -1185,9 +1202,21 @@ function renderAuth(modo,msg){const b=$('#authBody');let u={};try{u=JSON.parse(l
     <label class="w">Contraseña<input name="clave" type="password" required autocomplete="current-password"></label></div>
     <p class="aerr" id="authErr">${esc(msg||'')}</p><div class="sacts"><button class="btn" type="submit" style="flex:1">Ingresar</button></div></form>
     <div class="alinks"><button data-act="auth:registro">Inscribir mi ferretería</button><button data-act="demo">Ver demostración</button></div>`}
-function pintarMaestro(d){$('#mkPanel').innerHTML=`<div class="sacts"><button class="btn" data-act="mkcod">Generar código de invitación</button></div>
-  <div class="sect">Códigos de invitación</div><div class="card list">${d.invitaciones.length?d.invitaciones.map(i=>`<div class="rowi"><span class="nm codigo">${esc(i.codigo)}</span><span class="sb">${i.usado_por?'Usado por '+esc(i.usado_por)+' · '+fdate(i.usado):'Creado el '+fdate(i.creado)}</span><span class="r">${i.usado_por?'<span class="pill neu">Usado</span>':`<button class="btn sec sm" data-act="copiar:${esc(i.codigo)}">Copiar</button>`}</span></div>`).join(''):'<div class="empty">Aún no hay códigos.</div>'}</div>
-  <div class="sect">Ferreterías inscritas</div><div class="card list">${d.ferreterias.length?d.ferreterias.map(f=>`<div class="rowi"><span class="nm">${esc(f.nombre)}</span><span class="sb">Desde el ${fdate(f.creado)}</span><span class="r"><span class="pill neu">${f.usuarios} ${f.usuarios===1?'usuario':'usuarios'}</span></span></div>`).join(''):'<div class="empty">Aún no hay ferreterías.</div>'}</div>`}
+let mkData=null;
+function pintarMaestro(d){mkData=d;const P=d.planes||{};
+  $('#mkPanel').innerHTML=`<div class="sect">Ferreterías inscritas</div><div class="card list">${d.ferreterias.length?d.ferreterias.map(f=>{const i=f.info;return`<button class="rowi" data-act="mkf:${esc(f.slug)}"><span class="nm">${esc(f.nombre)}</span><span class="sb">Plan ${esc(i.nombre)} · ${f.usuarios} ${f.usuarios===1?'usuario':'usuarios'} · ${f.productos} productos</span><span class="r"><span class="pill ${i.estado==='activa'?(i.dias!=null&&i.dias<=7?'low':''):'bad'}">${i.estado==='suspendida'?'Suspendida':i.estado==='vencida'?'Vencida':i.dias==null?'Activa':i.dias+' días'}</span></span></button>`}).join(''):'<div class="empty">Aún no hay ferreterías.</div>'}</div>
+  <div class="vtop" style="height:auto;margin:18px 0 8px"><h2 style="font-size:16px">Códigos de invitación</h2><button class="btn sm" data-act="mkcod">Generar código</button></div><div class="card list">${d.invitaciones.length?d.invitaciones.map(i=>`<div class="rowi"><span class="nm codigo">${esc(i.codigo)}</span><span class="sb">${i.usado_por?'Usado por '+esc(i.usado_por)+' · '+fdate(i.usado):'Creado el '+fdate(i.creado)}</span><span class="r">${i.usado_por?'<span class="pill neu">Usado</span>':`<button class="btn sec sm" data-act="copiar:${esc(i.codigo)}">Copiar</button>`}</span></div>`).join(''):'<div class="empty">Aún no hay códigos.</div>'}</div>
+  <p class="note">${Object.values(P).map(p=>`${p.nombre}: ${p.usuarios?p.usuarios+' usuarios':'usuarios ilimitados'}, ${p.productos?p.productos.toLocaleString('es-CO')+' productos':'productos ilimitados'}`).join(' · ')}. Cada ferretería nueva empieza con 30 días de prueba en Estándar.</p>`}
+function sheetFerr(slug){const f=mkData.ferreterias.find(x=>x.slug===slug);if(!f)return;const i=f.info,P=mkData.planes||{};
+  openSheet(`<h3>${esc(f.nombre)}</h3><div class="kpis">${kpi('Estado',i.estado==='suspendida'?'Suspendida':i.estado==='vencida'?'Vencida':'Activa','',i.estado==='activa'?'good':'bad')}${kpi('Vence',f.vence?fdate(f.vence):'—',i.dias==null?'':i.dias<0?'hace '+(-i.dias)+' días':'faltan '+i.dias+' días',i.dias!=null&&i.dias<=7?'warn':'')}${kpi('Usuarios',f.usuarios,i.usuarios?'de '+i.usuarios:'sin límite')}${kpi('Productos',f.productos,i.productos?'de '+i.productos.toLocaleString('es-CO'):'sin límite')}</div>
+  <p style="color:var(--mut);font-size:13.5px">Inscrita el ${fdate(f.creado)} · ${f.ventas} facturas · última actividad ${f.actualizado?fdate(f.actualizado)+', '+ftime(f.actualizado):'—'}</p>
+  <div class="sect">Plan</div><div class="cats">${Object.entries(P).map(([k,p])=>`<button data-act="mkplan:${esc(slug)}:${k}" class="${i.plan===k?'on':''}">${esc(p.nombre)}</button>`).join('')}</div>
+  <div class="sect">Extender la membresía</div><div class="sacts" style="margin-top:0"><button class="btn sec sm" data-act="mkdias:${esc(slug)}:15">+15 días</button><button class="btn sec sm" data-act="mkdias:${esc(slug)}:30">+1 mes</button><button class="btn sec sm" data-act="mkdias:${esc(slug)}:90">+3 meses</button><button class="btn sec sm" data-act="mkdias:${esc(slug)}:365">+1 año</button></div>
+  <p class="note">Los días se suman a la fecha de vencimiento, o a hoy si ya venció. Un mes gratis es «+1 mes».</p>
+  <div class="sect">Acceso</div><div class="sacts" style="margin-top:0">${f.suspendida?`<button class="btn" data-act="mksusp:${esc(slug)}:0">Reactivar acceso</button>`:`<button class="btn sec" data-act="mksusp:${esc(slug)}:1" style="color:var(--bad);border-color:#F3C4C4">Suspender acceso</button>`}<button class="btn sec" data-act="mkresp:${esc(slug)}">Copias de seguridad</button></div>
+  <div id="mkResp"></div>`)}
+function mkDo(body,despues){api('maestro',{body:Object.assign({clave:mk},body)}).then(r=>{if(!r.ok){toast(r.d.error||'No se pudo');return}despues(r.d)},()=>toast('Sin conexión'))}
+let restArm='';
 async function enviarAuth(f,k,d){const e=$('#authErr'), bt=f.querySelector('button[type=submit]');e.textContent='';
   if(k==='registro'&&d.clave!==d.clave2){e.textContent='Las contraseñas no coinciden.';return}
   bt.disabled=true;let r;
@@ -1227,6 +1256,13 @@ document.addEventListener('click',e=>{
   else if(a==='syncnow'){dirty?push():pull();toast('Sincronizando…')}
   else if(a==='usr')sheetUsr(x);
   else if(a==='usrdel'){api('usuarios',{body:{accion:'borrar',id:+x}}).then(r=>{if(r.ok){S.users=r.d.usuarios;closeSheet();refresh();toast('Usuario borrado')}else toast(r.d.error||'No se pudo borrar')},()=>toast('Sin conexión'))}
+  else if(a==='mkf')sheetFerr(x);
+  else if(a==='mkplan')mkDo({accion:'plan',slug:x,plan:y},d=>{pintarMaestro(d);sheetFerr(x);toast('Plan actualizado')});
+  else if(a==='mkdias')mkDo({accion:'dias',slug:x,dias:+y},d=>{pintarMaestro(d);sheetFerr(x);toast('Membresía extendida '+y+' días')});
+  else if(a==='mksusp')mkDo({accion:'suspender',slug:x,valor:y==='1'},d=>{pintarMaestro(d);sheetFerr(x);toast(y==='1'?'Acceso suspendido':'Acceso reactivado')});
+  else if(a==='mkresp')mkDo({accion:'respaldos',slug:x},d=>{$('#mkResp').innerHTML=`<div class="sect">Copias guardadas</div><div class="card list">${d.respaldos.length?d.respaldos.map(r=>`<div class="rowi"><span class="nm">${fdate(r.creado)}, ${ftime(r.creado)}</span><span class="sb">${r.productos} productos · ${r.ventas} facturas</span><span class="r"><button class="btn sec sm" data-act="mkrest:${esc(x)}:${r.id}">Restaurar</button></span></div>`).join(''):'<div class="empty">Aún no hay copias: la primera se crea con el siguiente cambio de esta ferretería.</div>'}</div><p class="note">Restaurar reemplaza los datos actuales de la ferretería por los de esa copia. Antes se guarda una copia del estado actual.</p>`});
+  else if(a==='mkrest'){if(restArm!==x+y){restArm=x+y;toast('Toca otra vez para restaurar esa copia');setTimeout(()=>{restArm=''},4000);return}restArm='';mkDo({accion:'restaurar',slug:x,id:+y},d=>{pintarMaestro(d);sheetFerr(x);toast('Copia restaurada')})}
+  else if(a==='exportar'){if(!isJefe())return;try{const blob=new Blob([JSON.stringify({app:'FerreControl',ferreteria:ses?ses.ferreteria:null,fecha:new Date().toISOString(),datos:ses?fuera():S},null,1)],{type:'application/json'}),u=URL.createObjectURL(blob),el=document.createElement('a');el.href=u;el.download=`FerreControl-${ses?ses.ferreteria.slug:'demo'}-${dayKey(new Date())}.json`;document.body.appendChild(el);el.click();el.remove();setTimeout(()=>URL.revokeObjectURL(u),5000);toast('Copia descargada')}catch(e){toast('Aquí no se puede descargar')}}
   else if(a==='mkcod'){api('maestro',{body:{clave:mk,accion:'codigo'}}).then(r=>{if(r.ok){pintarMaestro(r.d);toast('Código creado')}else toast(r.d.error||'No se pudo')},()=>toast('Sin conexión'))}
   else if(a==='copiar')copy(x);
   else if(a==='reload'){try{location.replace(location.pathname+'?v='+Date.now()+'#configuracion')}catch(e){location.reload()}}
@@ -1245,7 +1281,8 @@ document.addEventListener('click',e=>{
   else if(a==='provnew'){if(isJefe())openSheet('<h3>Nuevo proveedor</h3><form data-form="provnew"><div class="fg"><label class="w">Nombre<input name="nombre" required></label><label>Contacto<input name="contacto"></label><label>Celular o teléfono<input name="tel" type="tel"></label></div><div class="sacts"><button class="btn" type="submit">Guardar</button></div></form>')}
   else if(a==='cxpnew'){if(isJefe()){const d=new Date(Date.now()+30*864e5);openSheet(`<h3>Factura de proveedor</h3><form data-form="cxpnew"><div class="fg"><label class="w">Proveedor<select name="prov"><option value="0">Sin proveedor</option>${S.provs.map(p=>`<option value="${p.id}">${esc(p.nombre)}</option>`).join('')}</select></label><label>N.º de factura<input name="ref" required></label><label>Valor<input name="valor" type="number" inputmode="numeric" min="1" required></label><label class="w">Fecha de vencimiento<input name="vence" type="date" required value="${dayKey(d)}"></label></div><div class="sacts"><button class="btn" type="submit">Guardar</button></div></form>`)}}
   else if(a==='logodel'){if(!isJefe())return;S.emp=Object.assign(emp(),{logo:null,lw:0,lh:0});save();renderView()}
-  else if(a==='pdfdemo'){const v=S.ventas[S.ventas.length-1];if(v)sheetFact(v.num)}
+  else if(a==='pdfdemo'){const n=new Date().toISOString(), it=[{pid:0,n:'Cemento gris 50 kg (ejemplo)',u:'bulto',c:10,p:33500,k:0},{pid:0,n:'Tubo PVC presión 1/2" x 6 m (ejemplo)',u:'tubo',c:4,p:14900,k:0}];
+    sheetFactV(S.ventas[S.ventas.length-1]||{num:'FV-EJEMPLO',fecha:n,vend:S.user,items:it,total:it.reduce((a,i)=>a+i.c*i.p,0),credito:false,caja:{medio:'Efectivo',por:S.user,f:n},cli:{nombre:'Cliente de ejemplo',tdoc:'CC',doc:'1.000.000.000',tel:'300 000 0000',dir:'Dirección del cliente'},entrega:{tipo:'tienda',dir:'',nota:''}})}
   else if(a==='cienew'){const q=$('#cieQ').value.trim(), f=b.closest('form'), num=!/[a-zñ]/i.test(q)&&q.replace(/\D/g,'').length>=5;
     if(num)f.doc.value=q;else f.nombre.value=q.replace(/(^|\s)\p{L}/gu,m=>m.toUpperCase());$('#cieRes').innerHTML='';(num?f.nombre:f.doc).focus()}
   else if(a==='cierre')sheetCierre(x,y||null);
@@ -1277,7 +1314,7 @@ document.addEventListener('submit',e=>{const f=e.target.closest('[data-form]');i
     save();refresh();sheetPed(o.num);toast('Pedido recibido: inventario actualizado');return}
   if(k==='provnew'){if(!isJefe())return;S.provs.push({id:uid(),nombre:d.nombre.trim(),contacto:d.contacto.trim(),tel:d.tel.trim(),hab:[]});toast('Proveedor guardado')}
   else if(k==='cxpnew'){if(!isJefe())return;S.cxp.push({id:uid(),prov:+d.prov,ref:d.ref.trim(),fecha:new Date().toISOString(),vence:new Date(d.vence+'T12:00:00').toISOString(),valor:+d.valor,pagado:0});toast('Factura registrada')}
-  else if(k==='prod'){if(!can('inv_edit'))return;const ant=f.dataset.id==='new'?null:prod(+f.dataset.id), o={nombre:d.nombre.trim(),alias:d.alias.trim(),unidad:d.unidad.trim().toLowerCase(),cat:d.cat.trim(),precio:can('precios')?+d.precio:(ant?ant.precio:0),costo:can('precios')?+d.costo:(ant?ant.costo:0),stock:+d.stock,min:+d.min,prov:+d.prov||0};
+  else if(k==='prod'){if(!can('inv_edit'))return;if(f.dataset.id==='new'&&ses&&ses.plan&&ses.plan.productos&&S.prods.length>=ses.plan.productos){toast(`El plan ${ses.plan.nombre} permite hasta ${ses.plan.productos} productos`);return}const ant=f.dataset.id==='new'?null:prod(+f.dataset.id), o={nombre:d.nombre.trim(),alias:d.alias.trim(),unidad:d.unidad.trim().toLowerCase(),cat:d.cat.trim(),precio:can('precios')?+d.precio:(ant?ant.precio:0),costo:can('precios')?+d.costo:(ant?ant.costo:0),stock:+d.stock,min:+d.min,prov:+d.prov||0};
     let pid=+f.dataset.id;if(f.dataset.id==='new'){pid=uid();S.prods.push(Object.assign({id:pid},o))}else Object.assign(prod(pid),o);
     {const pv=prv(o.prov);if(pv){const hb=habOf(pv);if(!hb.includes(pid))hb.push(pid)}}toast('Producto guardado')}
   else if(k==='cli'){S.clientes.push({id:uid(),nombre:d.nombre.trim(),nota:d.nota.trim(),tel:d.tel.trim(),tdoc:'CC',doc:d.doc.trim(),dir:d.dir.trim(),cupo:+d.cupo,saldo:0,mov:[]});toast('Cliente guardado')}
