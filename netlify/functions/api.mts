@@ -25,16 +25,16 @@ const q = async (text: string, params: any[] = []) => (await db().pool.query(tex
 const ROLES = ["admin", "vendedor", "bodega", "cajero"];
 // Límites de cada plan. null = sin límite.
 const PLANES: any = {
-  basico: { nombre: "Básico", usuarios: 2, productos: 300 },
-  estandar: { nombre: "Estándar", usuarios: 5, productos: 2000 },
-  pro: { nombre: "Pro", usuarios: null, productos: null },
+  basico: { nombre: "Básico", usuarios: 2, productos: 300, crm: false },
+  estandar: { nombre: "Estándar", usuarios: 5, productos: 2000, crm: true },
+  pro: { nombre: "Pro", usuarios: null, productos: null, crm: true },
 };
 const DIAS_PRUEBA = 30;
 const planDe = (f: any) => {
   const p = PLANES[f.plan] || PLANES.estandar;
   const ms = f.vence ? new Date(f.vence).getTime() - Date.now() : null;
   return {
-    plan: PLANES[f.plan] ? f.plan : "estandar", nombre: p.nombre, usuarios: p.usuarios, productos: p.productos,
+    plan: PLANES[f.plan] ? f.plan : "estandar", nombre: p.nombre, usuarios: p.usuarios, productos: p.productos, crm: p.crm !== false,
     vence: f.vence, dias: ms == null ? null : Math.ceil(ms / 864e5),
     estado: f.suspendida ? "suspendida" : ms != null && ms < 0 ? "vencida" : "activa",
   };
